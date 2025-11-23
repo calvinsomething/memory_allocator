@@ -7,9 +7,10 @@
 class MemoryAllocator
 {
   public:
-    template <size_t N> MemoryAllocator(Chunk (&chunks)[N]) : chunks(chunks), chunk_count(N)
-    {
-    }
+    MemoryAllocator(size_t max_chunks);
+    ~MemoryAllocator();
+
+    bool add_chunk(size_t size);
 
     template <typename T, typename... Args> T *allocate(Args &&...args)
     {
@@ -23,6 +24,8 @@ class MemoryAllocator
             if (mem)
             {
                 new (mem) T(std::forward<Args>(args)...);
+
+                break;
             }
         }
 
@@ -46,5 +49,6 @@ class MemoryAllocator
 
   private:
     Chunk *chunks = 0;
-    size_t chunk_count = 0;
+
+    size_t chunk_count = 0, max_chunks = 0;
 };

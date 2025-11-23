@@ -52,8 +52,6 @@ TEST(AllocatorTest, OverAllocate)
     {
         chars[i] = static_cast<char *>(chunk.allocate(sizeof(char)));
 
-        std::cout << "chars[i] = " << reinterpret_cast<unsigned long>(chars[i]) << "\n";
-
         if (i)
         {
             ASSERT_TRUE(chars[i]);
@@ -69,9 +67,8 @@ TEST(AllocatorTest, OverAllocate)
 
 TEST(AllocatorTest, AllocateAndFree)
 {
-    Chunk chunks[1] = {Chunk(64)};
-
-    MemoryAllocator allocator{chunks};
+    MemoryAllocator allocator(20);
+    allocator.add_chunk(64);
 
     bool alive = false;
 
@@ -87,6 +84,4 @@ TEST(AllocatorTest, AllocateAndFree)
     allocator.free(tc);
 
     ASSERT_EQ(alive, false);
-
-    std::cout << "\nDONE 1\n";
 }

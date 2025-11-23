@@ -10,7 +10,10 @@
 class Chunk
 {
   public:
+    Chunk() = default;
     Chunk(size_t size);
+    void init(size_t size);
+    ~Chunk();
 
     void *allocate(size_t bytes_requested);
 
