@@ -1,5 +1,5 @@
 add_library(${CMAKE_PROJECT_NAME}
-	MemoryAllocator.cpp
+	MappedSegmentAllocator.cpp
 	Chunk.cpp)
 
 message("adding target named ${CMAKE_PROJECT_NAME}")

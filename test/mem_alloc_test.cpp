@@ -1,7 +1,9 @@
-#include "MemoryAllocator.h"
 #include <gtest/gtest.h>
 
 #include <array>
+
+#include "Adapter.h"
+#include "MappedSegmentAllocator.h"
 
 class TestClass
 {
@@ -21,7 +23,7 @@ class TestClass
     bool &alive;
 };
 
-TEST(AllocatorTest, OverAllocate)
+TEST(ChunkTest, OverAllocate)
 {
     Chunk chunk(64);
 
@@ -39,7 +41,20 @@ TEST(AllocatorTest, OverAllocate)
 
     bytes_32 *b = static_cast<bytes_32 *>(chunk.allocate(sizeof(bytes_32)));
     ASSERT_TRUE(b);
+
     ASSERT_NE(a, b);
+
+    char *bcp = reinterpret_cast<char *>(b);
+
+    for (size_t i = 0; i < 32; ++i)
+    {
+        bcp[i] = 'B';
+    }
+
+    EXPECT_EQ((*a)[0], static_cast<char>('A'));
+    EXPECT_EQ((*a)[31], static_cast<char>('A'));
+    EXPECT_EQ((*b)[0], static_cast<char>('B'));
+    EXPECT_EQ((*b)[31], static_cast<char>('B'));
 
     bytes_32 *c = static_cast<bytes_32 *>(chunk.allocate(sizeof(bytes_32)));
     ASSERT_FALSE(c);
@@ -67,21 +82,65 @@ TEST(AllocatorTest, OverAllocate)
 
 TEST(AllocatorTest, AllocateAndFree)
 {
-    MemoryAllocator allocator(20);
+    MappedSegmentAllocator allocator;
     allocator.add_chunk(64);
 
     bool alive = false;
 
-    TestClass *tc = allocator.allocate<TestClass>(alive, 1, 2, 3);
+    TestClass *tc = allocator.emplace<TestClass>(alive, 1, 2, 3);
 
-    ASSERT_NE(tc, nullptr);
+    ASSERT_TRUE(tc);
 
     EXPECT_EQ(alive, true);
     EXPECT_EQ(tc->a, 1);
     EXPECT_EQ(tc->b, 2);
     EXPECT_EQ(tc->c, 3);
 
+    int *i = allocator.allocate<int>(2);
+
+    EXPECT_NE(static_cast<void *>(tc), static_cast<void *>(i));
+
     allocator.free(tc);
 
     ASSERT_EQ(alive, false);
+}
+
+TEST(AdapterTest, VectorAllocation)
+{
+    using A = Adapter<int, MappedSegmentAllocator>;
+    A::allocator.add_chunk(sizeof(int) * 8);
+
+    std::vector<int, A> v;
+
+    v.push_back(3);
+
+    EXPECT_EQ(v[0], 3);
+}
+
+TEST(AdapterTest, VectorLifeCycle)
+{
+    Adapter<int, MappedSegmentAllocator> a;
+    a.allocator.add_chunk(sizeof(int) * 8);
+
+    std::vector<int, decltype(a)> v;
+
+    v.push_back(0);
+
+    const int *addr = v.data();
+
+    EXPECT_NE(addr, a.allocate());
+
+    v.push_back(1);
+    v.push_back(2);
+    v.push_back(3);
+
+    EXPECT_EQ(v[3], 3);
+
+    EXPECT_NE(addr, v.data());
+
+    v.pop_back();
+    v.pop_back();
+    v.pop_back();
+
+    EXPECT_EQ(v.size(), 1);
 }

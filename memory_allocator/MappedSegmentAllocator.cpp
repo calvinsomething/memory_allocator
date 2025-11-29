@@ -1,11 +1,11 @@
-#include "MemoryAllocator.h"
+#include "MappedSegmentAllocator.h"
 
-MemoryAllocator::MemoryAllocator(size_t max_chunks) : max_chunks(max_chunks)
+MappedSegmentAllocator::MappedSegmentAllocator()
 {
     chunks = static_cast<Chunk *>(malloc(sizeof(Chunk) * max_chunks));
 }
 
-MemoryAllocator::~MemoryAllocator()
+MappedSegmentAllocator::~MappedSegmentAllocator()
 {
     for (size_t i = 0; i < chunk_count; ++i)
     {
@@ -15,7 +15,7 @@ MemoryAllocator::~MemoryAllocator()
     free(chunks);
 }
 
-bool MemoryAllocator::add_chunk(size_t size)
+bool MappedSegmentAllocator::add_chunk(size_t size)
 {
     if (chunk_count == max_chunks)
     {

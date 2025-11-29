@@ -143,8 +143,8 @@ void Chunk::set_free(bool free, size_t offset, size_t segment_size)
 
         segments_bit_index += segments_count;
 
-        subsegments_count /= 2;
         segments_count /= 2;
+        subsegments_count = (subsegments_count + (!!segments_count * !free)) / 2;
     }
 
     free_bytes_count += (2 * free - 1) * segment_size;
