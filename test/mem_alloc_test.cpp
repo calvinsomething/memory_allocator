@@ -3,6 +3,7 @@
 #include <array>
 
 #include "Adapter.h"
+#include "LinearAllocator.h"
 #include "MappedSegmentAllocator.h"
 
 class TestClass
@@ -143,4 +144,20 @@ TEST(AdapterTest, VectorLifeCycle)
     v.pop_back();
 
     EXPECT_EQ(v.size(), 1);
+}
+
+TEST(LinearAllocatorTest, AllocateAndFree)
+{
+    LinearAllocator a(64);
+
+    bool alive = false;
+
+    TestClass *tc = a.emplace<TestClass>(alive, 1, 2, 3);
+
+    EXPECT_TRUE(alive);
+
+    a.free(tc);
+    EXPECT_EQ(tc->a, 0);
+    EXPECT_EQ(tc->b, 0);
+    EXPECT_EQ(tc->c, 0);
 }
