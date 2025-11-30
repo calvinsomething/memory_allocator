@@ -13,7 +13,7 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 add_executable(${TARGET_NAME}
-	mem_alloc_test.cpp
+	"${TARGET_NAME}.cpp"
 )
 
 target_link_libraries(${TARGET_NAME}

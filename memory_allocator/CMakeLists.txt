@@ -1,6 +1,6 @@
-add_library(${CMAKE_PROJECT_NAME}
+add_library(${PROJECT_NAME}
 	Chunk.cpp
 	LinearAllocator.cpp
 	MappedSegmentAllocator.cpp)
 
-target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC .)
+target_include_directories(${PROJECT_NAME} PUBLIC .)

@@ -12,6 +12,8 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 	if(NOT PROJECT_BUILD_TYPE)
 		set(PROJECT_BUILD_TYPE Development)
 	endif()
+else()
+	target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC .)
 endif()
 
 add_subdirectory(memory_allocator)
@@ -19,12 +21,10 @@ add_subdirectory(memory_allocator)
 if(PROJECT_BUILD_TYPE STREQUAL Test)
 	message("Configuring tests...")
 	add_subdirectory(test)
-else()
-	if(PROJECT_BUILD_TYPE STREQUAL Development)
-		set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-		execute_process(COMMAND
-			${CMAKE_COMMAND} -E create_symlink ${CMAKE_BINARY_DIR}/compile_commands.json ${PROJECT_SOURCE_DIR}/compile_commands.json
-		)
-	endif()
+elseif(PROJECT_BUILD_TYPE STREQUAL Development)
+	set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+	execute_process(COMMAND
+		${CMAKE_COMMAND} -E create_symlink ${CMAKE_BINARY_DIR}/compile_commands.json ${PROJECT_SOURCE_DIR}/compile_commands.json
+	)
 endif()
 
