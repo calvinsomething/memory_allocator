@@ -5,16 +5,26 @@ project(memory_allocator)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT CMAKE_BUILD_TYPE)
-	set(CMAKE_BUILD_TYPE Debug)
+# if this is the top level project of the build
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+	set(PROJECT_BUILD_TYPE ${CMAKE_BUILD_TYPE})
+
+	if(NOT PROJECT_BUILD_TYPE)
+		set(PROJECT_BUILD_TYPE Development)
+	endif()
 endif()
 
 add_subdirectory(memory_allocator)
-add_subdirectory(test)
 
-if (CMAKE_BUILD_TYPE STREQUAL Debug)
-	set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-	execute_process(COMMAND
-		${CMAKE_COMMAND} -E create_symlink ${CMAKE_BINARY_DIR}/compile_commands.json ${PROJECT_SOURCE_DIR}/compile_commands.json
-	)
+if(PROJECT_BUILD_TYPE STREQUAL Test)
+	message("Configuring tests...")
+	add_subdirectory(test)
+else()
+	if(PROJECT_BUILD_TYPE STREQUAL Development)
+		set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+		execute_process(COMMAND
+			${CMAKE_COMMAND} -E create_symlink ${CMAKE_BINARY_DIR}/compile_commands.json ${PROJECT_SOURCE_DIR}/compile_commands.json
+		)
+	endif()
 endif()
+

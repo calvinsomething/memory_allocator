@@ -1,8 +1,6 @@
 add_library(${CMAKE_PROJECT_NAME}
+	Chunk.cpp
 	LinearAllocator.cpp
-	MappedSegmentAllocator.cpp
-	Chunk.cpp)
-
-message("adding target named ${CMAKE_PROJECT_NAME}")
+	MappedSegmentAllocator.cpp)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC .)

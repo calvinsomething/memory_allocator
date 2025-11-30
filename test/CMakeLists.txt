@@ -17,8 +17,8 @@ add_executable(${TARGET_NAME}
 )
 
 target_link_libraries(${TARGET_NAME}
-	${CMAKE_PROJECT_NAME}
 	GTest::gtest_main
+	${CMAKE_PROJECT_NAME}
 )
 
 include(GoogleTest)
