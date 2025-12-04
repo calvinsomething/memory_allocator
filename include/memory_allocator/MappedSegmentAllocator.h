@@ -4,7 +4,7 @@
 #include <cstring>
 #include <utility>
 
-#include "Chunk.h"
+#include "memory_allocator/Chunk.h"
 
 class MappedSegmentAllocator
 {

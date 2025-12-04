@@ -2,9 +2,9 @@
 
 #include <array>
 
-#include "Adapter.h"
-#include "LinearAllocator.h"
-#include "MappedSegmentAllocator.h"
+#include "memory_allocator/Adapter.h"
+#include "memory_allocator/LinearAllocator.h"
+#include "memory_allocator/MappedSegmentAllocator.h"
 
 class TestClass
 {
