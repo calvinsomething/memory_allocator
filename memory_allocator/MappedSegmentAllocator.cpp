@@ -1,5 +1,7 @@
 #include "memory_allocator/MappedSegmentAllocator.h"
 
+#include <new>
+
 MappedSegmentAllocator::MappedSegmentAllocator()
 {
     chunks = static_cast<Chunk *>(malloc(sizeof(Chunk) * max_chunks));
@@ -22,7 +24,7 @@ bool MappedSegmentAllocator::add_chunk(size_t size)
         return false;
     }
 
-    chunks[chunk_count].init(size);
+    new (chunks + chunk_count) Chunk(size);
     ++chunk_count;
 
     return true;

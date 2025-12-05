@@ -121,7 +121,9 @@ TEST(AdapterTest, VectorAllocation)
 TEST(AdapterTest, VectorLifeCycle)
 {
     Adapter<int, MappedSegmentAllocator> a;
-    a.allocator.add_chunk(sizeof(int) * 8);
+
+    Adapter<char, MappedSegmentAllocator> b;
+    b.allocator.add_chunk(sizeof(int) * 8);
 
     std::vector<int, decltype(a)> v;
 
