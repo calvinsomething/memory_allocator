@@ -4,11 +4,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#define MIN_SEGMENT_SIZE 4
-
-#define STRING(s) MACRO_TO_STR(#s)
-#define MACRO_TO_STR(s) #s
-
 class Chunk
 {
   public:

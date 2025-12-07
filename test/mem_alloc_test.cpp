@@ -1,6 +1,8 @@
+#include <cstdlib>
 #include <gtest/gtest.h>
 
 #include <array>
+#include <random>
 
 #include "memory_allocator/Adapter.h"
 #include "memory_allocator/LinearAllocator.h"
@@ -146,6 +148,40 @@ TEST(AdapterTest, VectorLifeCycle)
     v.pop_back();
 
     EXPECT_EQ(v.size(), 1);
+}
+
+TEST(AdapterTest, NestedVectors)
+{
+    Adapter<int, MappedSegmentAllocator> a;
+    a.allocator.add_chunk(10'000'000);
+
+    struct Parent
+    {
+        std::vector<int, Adapter<int, MappedSegmentAllocator>> child;
+    };
+
+    std::vector<Parent, Adapter<Parent, MappedSegmentAllocator>> parents;
+
+    for (size_t i = 0; i < 100; ++i)
+    {
+        parents.push_back({});
+    }
+
+    std::random_device rd;
+    std::uniform_int_distribution<int> dist(0, 1000);
+
+    for (Parent &p : parents)
+    {
+        p.child.push_back(dist(rd));
+    }
+
+    for (Parent &p : parents)
+    {
+        for (int i : p.child)
+        {
+            std::cout << "p.child = " << p.child[0] << "\n";
+        }
+    }
 }
 
 TEST(LinearAllocatorTest, AllocateAndFree)

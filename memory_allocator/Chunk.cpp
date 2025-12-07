@@ -1,5 +1,12 @@
 #include "memory_allocator/Chunk.h"
 
+#ifndef MIN_SEGMENT_SIZE
+#define MIN_SEGMENT_SIZE 4
+#endif
+
+#define STRING(s) MACRO_TO_STR(#s)
+#define MACRO_TO_STR(s) #s
+
 Chunk::Chunk(size_t size)
 {
     init(size);
@@ -9,7 +16,11 @@ void Chunk::init(size_t size)
 {
     assert("Chunk size cannot be less than " STRING(MIN_SEGMENT_SIZE) " bytes" && size >= MIN_SEGMENT_SIZE);
 
-    memory_size = size;
+    memory_size = MIN_SEGMENT_SIZE;
+    do
+    {
+        memory_size *= 2;
+    } while (memory_size < size);
 
     set_bitmap_size();
 
@@ -122,13 +133,12 @@ void Chunk::set_free(bool free, size_t offset, size_t segment_size)
         size_t bit_index = segments_bit_index + offset * subsegments_count;
         size_t byte_index = bit_index / 8;
 
-        size_t remaining_bits_to_set = subsegments_count, bit_offset = bit_index % 8,
-               max_focused_bits_count = 8 - bit_offset;
+        size_t remaining_bits_to_set = subsegments_count, bit_offset = bit_index % 8;
 
         while (remaining_bits_to_set)
         {
-            size_t focused_bits_count =
-                remaining_bits_to_set > max_focused_bits_count ? max_focused_bits_count : remaining_bits_to_set;
+            size_t focused_bits_count = remaining_bits_to_set % 8;
+            focused_bits_count += (!focused_bits_count * 8);
             remaining_bits_to_set -= focused_bits_count;
 
             unsigned char focused_bits = ~0u << (8 - focused_bits_count);
@@ -137,7 +147,6 @@ void Chunk::set_free(bool free, size_t offset, size_t segment_size)
             bitmap[byte_index] = (bitmap[byte_index] & ~focused_bits) | (focused_bits * free);
 
             ++byte_index;
-            max_focused_bits_count = 8;
             bit_offset = 0;
         }
 
