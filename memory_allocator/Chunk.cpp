@@ -58,15 +58,15 @@ void *Chunk::allocate(size_t bytes_requested)
         segment_size *= 2;
     }
 
-    int bit_offset = 7 - bitmap_index % 8;
+    int bit_shift = 7 - bitmap_index % 8;
 
     size_t byte_index = bitmap_index / 8;
 
     for (size_t i = 0; i < segments_count; ++byte_index)
     {
-        for (; bit_offset >= 0; --bit_offset)
+        for (; bit_shift >= 0; --bit_shift)
         {
-            if (bitmap[byte_index] & (1 << bit_offset))
+            if (bitmap[byte_index] & (1 << bit_shift))
             {
                 set_free(false, i, segment_size);
 
@@ -76,7 +76,7 @@ void *Chunk::allocate(size_t bytes_requested)
             ++i;
         }
 
-        bit_offset = 7;
+        bit_shift = 7;
     }
 
     return 0;
@@ -122,7 +122,7 @@ void Chunk::set_bitmap_size()
     bitmap_size = (bitmap_size + 7) / 8;
 }
 
-void Chunk::set_free(bool free, size_t offset, size_t segment_size)
+void Chunk::set_free(bool free, size_t segment_offset, size_t segment_size)
 {
     size_t subsegments_count = segment_size / MIN_SEGMENT_SIZE, segments_count = max_segments_count;
 
@@ -130,7 +130,7 @@ void Chunk::set_free(bool free, size_t offset, size_t segment_size)
 
     while (subsegments_count)
     {
-        size_t bit_index = segments_bit_index + offset * subsegments_count;
+        size_t bit_index = segments_bit_index + segment_offset * subsegments_count;
         size_t byte_index = bit_index / 8;
 
         size_t remaining_bits_to_set = subsegments_count, bit_offset = bit_index % 8;
@@ -153,7 +153,28 @@ void Chunk::set_free(bool free, size_t offset, size_t segment_size)
         segments_bit_index += segments_count;
 
         segments_count /= 2;
-        subsegments_count = (subsegments_count + (!!segments_count * !free)) / 2;
+        subsegments_count /= 2;
+    }
+
+    if (!free)
+    {
+        // set coarser segments to occupied
+        size_t offset = segment_offset;
+
+        while (segments_count)
+        {
+            offset /= 2;
+
+            size_t bit_index = segments_bit_index + offset, byte_index = bit_index / 8, bit_offset = bit_index % 8;
+
+            unsigned char bit_to_unset = 1 << (7 - bit_offset);
+
+            bitmap[byte_index] = bitmap[byte_index] ^ bit_to_unset;
+
+            segments_bit_index += segments_count;
+
+            segments_count /= 2;
+        }
     }
 
     free_bytes_count += (2 * free - 1) * segment_size;

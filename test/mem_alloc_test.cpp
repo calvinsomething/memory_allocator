@@ -118,6 +118,9 @@ TEST(AdapterTest, VectorAllocation)
     v.push_back(3);
 
     EXPECT_EQ(v[0], 3);
+
+    // reset Adapter.allocator
+    AllocatorGroup<MappedSegmentAllocator, 0>::allocator = MappedSegmentAllocator();
 }
 
 TEST(AdapterTest, VectorLifeCycle)
@@ -155,33 +158,47 @@ TEST(AdapterTest, NestedVectors)
     Adapter<int, MappedSegmentAllocator> a;
     a.allocator.add_chunk(10'000'000);
 
+    constexpr size_t element_count = 64000;
+
     struct Parent
     {
-        std::vector<int, Adapter<int, MappedSegmentAllocator>> child;
+        std::vector<Parent *, Adapter<Parent *, MappedSegmentAllocator>> parents;
+        size_t i = 0;
     };
 
     std::vector<Parent, Adapter<Parent, MappedSegmentAllocator>> parents;
 
-    for (size_t i = 0; i < 100; ++i)
+    std::unordered_map<int, Parent *> parents_by_int;
+
+    parents.reserve(element_count);
+
+    for (size_t i = 0; i < element_count; ++i)
     {
-        parents.push_back({});
+        parents.push_back({{}, i});
+
+        parents_by_int.insert({i, &parents.back()});
     }
 
-    std::random_device rd;
-    std::uniform_int_distribution<int> dist(0, 1000);
+    // std::random_device rd;
+    // std::uniform_int_distribution<int> dist(0, element_count);
 
-    for (Parent &p : parents)
-    {
-        p.child.push_back(dist(rd));
-    }
+    // for (Parent &p : parents)
+    // {
+    //     for (size_t i = 0; i < 2; ++i)
+    //     {
+    //         int index = dist(rd);
 
-    for (Parent &p : parents)
-    {
-        for (int i : p.child)
-        {
-            std::cout << "p.child = " << p.child[0] << "\n";
-        }
-    }
+    //         if (index != p.i)
+    //         {
+    //             auto parent = parents_by_int.find(index);
+
+    //             if (parent != parents_by_int.end())
+    //             {
+    //                 p.parents.push_back(parent->second);
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 TEST(LinearAllocatorTest, AllocateAndFree)
