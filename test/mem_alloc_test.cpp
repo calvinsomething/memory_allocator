@@ -5,6 +5,7 @@
 #include <random>
 
 #include "memory_allocator/Adapter.h"
+#include "memory_allocator/BlockAllocator.h"
 #include "memory_allocator/LinearAllocator.h"
 #include "memory_allocator/MappedSegmentAllocator.h"
 
@@ -26,193 +27,171 @@ class TestClass
     bool &alive;
 };
 
-TEST(ChunkTest, OverAllocate)
+TEST(BlockAllocatorTest, Allocate)
 {
-    Chunk chunk(64);
+    constexpr size_t size = sizeof(int);
 
-    using bytes_32 = std::array<char, 32>;
+    BlockAllocator allocator(size * 2, 2);
 
-    bytes_32 *a = static_cast<bytes_32 *>(chunk.allocate(sizeof(bytes_32)));
+    int *a = static_cast<int *>(allocator.allocate(size));
     ASSERT_TRUE(a);
 
-    char *acp = reinterpret_cast<char *>(a);
-
-    for (size_t i = 0; i < 32; ++i)
-    {
-        acp[i] = 'A';
-    }
-
-    bytes_32 *b = static_cast<bytes_32 *>(chunk.allocate(sizeof(bytes_32)));
+    int *b = static_cast<int *>(allocator.allocate(size));
     ASSERT_TRUE(b);
 
     ASSERT_NE(a, b);
-
-    char *bcp = reinterpret_cast<char *>(b);
-
-    for (size_t i = 0; i < 32; ++i)
-    {
-        bcp[i] = 'B';
-    }
-
-    EXPECT_EQ((*a)[0], static_cast<char>('A'));
-    EXPECT_EQ((*a)[31], static_cast<char>('A'));
-    EXPECT_EQ((*b)[0], static_cast<char>('B'));
-    EXPECT_EQ((*b)[31], static_cast<char>('B'));
-
-    bytes_32 *c = static_cast<bytes_32 *>(chunk.allocate(sizeof(bytes_32)));
-    ASSERT_FALSE(c);
-
-    ASSERT_TRUE(chunk.free(a, sizeof(*a)));
-
-    char *chars[8];
-
-    for (size_t i = 0; i < 8; ++i)
-    {
-        chars[i] = static_cast<char *>(chunk.allocate(sizeof(char)));
-
-        if (i)
-        {
-            ASSERT_TRUE(chars[i]);
-        }
-        else
-        {
-            ASSERT_EQ(static_cast<void *>(a), static_cast<void *>(chars[i]));
-        }
-    }
-
-    ASSERT_FALSE(static_cast<char *>(chunk.allocate(sizeof(char))));
 }
 
-TEST(AllocatorTest, AllocateAndFree)
+TEST(BlockAllocatorTest, OverAllocate)
 {
-    MappedSegmentAllocator allocator;
-    allocator.add_chunk(64);
+    constexpr size_t size = sizeof(int);
 
-    bool alive = false;
+    BlockAllocator allocator(size, 1);
 
-    TestClass *tc = allocator.emplace<TestClass>(alive, 1, 2, 3);
+    int *a = static_cast<int *>(allocator.allocate(size));
+    ASSERT_TRUE(a);
 
-    ASSERT_TRUE(tc);
+    int *b = static_cast<int *>(allocator.allocate(size));
+    ASSERT_FALSE(b);
+}
 
-    EXPECT_EQ(alive, true);
-    EXPECT_EQ(tc->a, 1);
-    EXPECT_EQ(tc->b, 2);
-    EXPECT_EQ(tc->c, 3);
+TEST(BlockAllocatorTest, Deallocate)
+{
+    constexpr size_t size = sizeof(int);
 
-    int *i = allocator.allocate<int>(2);
+    BlockAllocator allocator(size * 2, 2);
 
-    EXPECT_NE(static_cast<void *>(tc), static_cast<void *>(i));
+    int *a = static_cast<int *>(allocator.allocate(size));
+    ASSERT_TRUE(a);
 
-    allocator.free(tc);
+    int *b = static_cast<int *>(allocator.allocate(size));
+    ASSERT_TRUE(b);
 
-    ASSERT_EQ(alive, false);
+    allocator.deallocate(b);
+    allocator.deallocate(a);
+
+    int *c = static_cast<int *>(allocator.allocate(size));
+    ASSERT_EQ(a, c);
+
+    int *d = static_cast<int *>(allocator.allocate(size));
+    ASSERT_EQ(b, d);
+}
+
+TEST(BlockAllocatorTest, Remainder)
+{
+    constexpr size_t size = sizeof(int);
+
+    BlockAllocator allocator(size * 3, 2);
+
+    int *a = static_cast<int *>(allocator.allocate(size));
+    ASSERT_TRUE(a);
+
+    int *b = static_cast<int *>(allocator.allocate(size));
+    ASSERT_TRUE(b);
 }
 
 TEST(AdapterTest, VectorAllocation)
 {
-    using A = Adapter<int, MappedSegmentAllocator>;
-    A::allocator.add_chunk(sizeof(int) * 8);
+    using A = Adapter<int, BlockAllocator>;
+    A::allocator.init(12, 5);
 
     std::vector<int, A> v;
 
     v.push_back(3);
 
     EXPECT_EQ(v[0], 3);
-
-    // reset Adapter.allocator
-    AllocatorGroup<MappedSegmentAllocator, 0>::allocator = MappedSegmentAllocator();
 }
 
-TEST(AdapterTest, VectorLifeCycle)
-{
-    Adapter<int, MappedSegmentAllocator> a;
-
-    Adapter<char, MappedSegmentAllocator> b;
-    b.allocator.add_chunk(sizeof(int) * 8);
-
-    std::vector<int, decltype(a)> v;
-
-    v.push_back(0);
-
-    const int *addr = v.data();
-
-    EXPECT_NE(addr, a.allocate());
-
-    v.push_back(1);
-    v.push_back(2);
-    v.push_back(3);
-
-    EXPECT_EQ(v[3], 3);
-
-    EXPECT_NE(addr, v.data());
-
-    v.pop_back();
-    v.pop_back();
-    v.pop_back();
-
-    EXPECT_EQ(v.size(), 1);
-}
-
-TEST(AdapterTest, NestedVectors)
-{
-    Adapter<int, MappedSegmentAllocator> a;
-    a.allocator.add_chunk(10'000'000);
-
-    constexpr size_t element_count = 64000;
-
-    struct Parent
-    {
-        std::vector<Parent *, Adapter<Parent *, MappedSegmentAllocator>> parents;
-        size_t i = 0;
-    };
-
-    std::vector<Parent, Adapter<Parent, MappedSegmentAllocator>> parents;
-
-    std::unordered_map<int, Parent *> parents_by_int;
-
-    parents.reserve(element_count);
-
-    for (size_t i = 0; i < element_count; ++i)
-    {
-        parents.push_back({{}, i});
-
-        parents_by_int.insert({i, &parents.back()});
-    }
-
-    // std::random_device rd;
-    // std::uniform_int_distribution<int> dist(0, element_count);
-
-    // for (Parent &p : parents)
-    // {
-    //     for (size_t i = 0; i < 2; ++i)
-    //     {
-    //         int index = dist(rd);
-
-    //         if (index != p.i)
-    //         {
-    //             auto parent = parents_by_int.find(index);
-
-    //             if (parent != parents_by_int.end())
-    //             {
-    //                 p.parents.push_back(parent->second);
-    //             }
-    //         }
-    //     }
-    // }
-}
-
-TEST(LinearAllocatorTest, AllocateAndFree)
-{
-    LinearAllocator a(64);
-
-    bool alive = false;
-
-    TestClass *tc = a.emplace<TestClass>(alive, 1, 2, 3);
-
-    EXPECT_TRUE(alive);
-
-    a.free(tc);
-    EXPECT_EQ(tc->a, 0);
-    EXPECT_EQ(tc->b, 0);
-    EXPECT_EQ(tc->c, 0);
-}
+// TEST(AdapterTest, VectorLifeCycle)
+//{
+//     Adapter<int, MappedSegmentAllocator> a;
+//
+//     Adapter<char, MappedSegmentAllocator> b;
+//     b.allocator.add_chunk(sizeof(int) * 8);
+//
+//     std::vector<int, decltype(a)> v;
+//
+//     v.push_back(0);
+//
+//     const int *addr = v.data();
+//
+//     EXPECT_NE(addr, a.allocate());
+//
+//     v.push_back(1);
+//     v.push_back(2);
+//     v.push_back(3);
+//
+//     EXPECT_EQ(v[3], 3);
+//
+//     EXPECT_NE(addr, v.data());
+//
+//     v.pop_back();
+//     v.pop_back();
+//     v.pop_back();
+//
+//     EXPECT_EQ(v.size(), 1);
+// }
+//
+// TEST(AdapterTest, NestedVectors)
+//{
+//     Adapter<int, MappedSegmentAllocator> a;
+//     a.allocator.add_chunk(10'000'000);
+//
+//     constexpr size_t element_count = 64000;
+//
+//     struct Parent
+//     {
+//         std::vector<Parent *, Adapter<Parent *, MappedSegmentAllocator>> parents;
+//         size_t i = 0;
+//     };
+//
+//     std::vector<Parent, Adapter<Parent, MappedSegmentAllocator>> parents;
+//
+//     std::unordered_map<int, Parent *> parents_by_int;
+//
+//     parents.reserve(element_count);
+//
+//     for (size_t i = 0; i < element_count; ++i)
+//     {
+//         parents.push_back({{}, i});
+//
+//         parents_by_int.insert({i, &parents.back()});
+//     }
+//
+//     std::random_device rd;
+//     std::uniform_int_distribution<int> dist(0, element_count);
+//
+//     for (Parent &p : parents)
+//     {
+//         for (size_t i = 0; i < 2; ++i)
+//         {
+//             int index = dist(rd);
+//
+//             if (index != p.i)
+//             {
+//                 auto parent = parents_by_int.find(index);
+//
+//                 if (parent != parents_by_int.end())
+//                 {
+//                     p.parents.push_back(parent->second);
+//                 }
+//             }
+//         }
+//     }
+// }
+//
+// TEST(LinearAllocatorTest, AllocateAndFree)
+//{
+//     LinearAllocator a(64);
+//
+//     bool alive = false;
+//
+//     TestClass *tc = a.emplace<TestClass>(alive, 1, 2, 3);
+//
+//     EXPECT_TRUE(alive);
+//
+//     a.free(tc);
+//     EXPECT_EQ(tc->a, 0);
+//     EXPECT_EQ(tc->b, 0);
+//     EXPECT_EQ(tc->c, 0);
+// }

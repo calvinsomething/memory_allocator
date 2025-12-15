@@ -1,7 +1,8 @@
 #include "memory_allocator/Chunk.h"
+#include "memory_allocator/Debug.h"
 
 #ifndef MIN_SEGMENT_SIZE
-#define MIN_SEGMENT_SIZE 4
+#define MIN_SEGMENT_SIZE 32
 #endif
 
 #define STRING(s) MACRO_TO_STR(#s)
@@ -85,6 +86,8 @@ void *Chunk::allocate(size_t bytes_requested)
 bool Chunk::free(void *segment, size_t size)
 {
     int offset = static_cast<char *>(segment) - memory;
+
+    log_bits(bitmap, bitmap_size);
 
     if (offset >= 0 && offset < memory_size)
     {

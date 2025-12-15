@@ -1,4 +1,5 @@
 add_library(${PROJECT_NAME}
+	BlockAllocator.cpp
 	Chunk.cpp
 	LinearAllocator.cpp
 	MappedSegmentAllocator.cpp)
