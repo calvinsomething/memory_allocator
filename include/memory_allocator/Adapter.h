@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <new>
 
 template <typename ValueType, typename AllocatorType, unsigned ID = 0> class Adapter
 {
@@ -36,13 +37,21 @@ template <typename ValueType, typename AllocatorType, unsigned ID = 0> class Ada
     {
     }
 
-    Adapter operator=(Adapter &&other)
+    Adapter &operator=(Adapter &&other)
     {
+        return *this;
     }
 
     ValueType *allocate(size_t n = 1)
     {
-        return static_cast<ValueType *>(allocator.allocate(n * sizeof(ValueType)));
+        ValueType *mem = static_cast<ValueType *>(allocator.allocate(n * sizeof(ValueType)));
+
+        if (!mem)
+        {
+            throw std::bad_alloc();
+        }
+
+        return mem;
     }
 
     void deallocate(ValueType *mem, size_t n)

@@ -17,5 +17,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
 		message("Configuring tests build...")
 		add_subdirectory(test)
+
+		set(CMAKE_BUILD_TYPE Debug)
 	endif()
 endif()

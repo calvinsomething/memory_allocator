@@ -78,6 +78,7 @@ BlockAllocator::~BlockAllocator()
     if (memory)
     {
         free(memory);
+        memory = 0;
     }
 }
 
@@ -87,9 +88,10 @@ void *BlockAllocator::allocate(size_t size)
     size_t min_diff = INVALID_INT, min_diff_index = 0, summed_offset = 0, min_diff_offset = 0;
     for (size_t i = 0; i < headers_count; ++i)
     {
-        if (headers[i].is_free())
+        size_t header_size = headers[i].get_size();
+        if (header_size >= size && headers[i].is_free())
         {
-            size_t diff = headers[i].get_size() - size;
+            size_t diff = header_size - size;
             if (!diff)
             {
                 headers[i].set_free(false);
@@ -103,7 +105,8 @@ void *BlockAllocator::allocate(size_t size)
             }
         }
 
-        summed_offset += headers[i].get_size();
+        summed_offset += header_size + (summed_offset == remainder_offset) *
+                                           remainder_size; // include remainder_size if we encounter remainder's address
     }
 
     void *mem = 0;
@@ -117,29 +120,30 @@ void *BlockAllocator::allocate(size_t size)
 
                 if (i == INVALID_INT)
                 {
-                    remainder_offset = min_diff_offset + size;
-                    remainder_size = min_diff;
-                    headers[min_diff_index].increment_size(-remainder_size);
+                    if (!remainder_size)
+                    {
+                        remainder_size = min_diff;
+                        remainder_offset = min_diff_offset + size;
+                        headers[min_diff_index].increment_size(-remainder_size);
+                    }
                 }
                 else
                 {
                     if (i < min_diff_index)
                     {
                         size_t src_index = i + 1;
-                        memcpy(headers + i, headers + src_index, sizeof(Header) * (min_diff_index - src_index));
+                        memcpy(headers + i, headers + src_index, sizeof(Header) * (min_diff_index + 1 - src_index));
                         i = min_diff_index;
                         min_diff_index -= 1;
                     }
                     else
                     {
                         size_t src_index = min_diff_index + 1;
-                        memcpy(headers + min_diff_index + 2, headers + src_index,
-                               sizeof(Header) * (i - min_diff_index));
+                        memcpy(headers + src_index + 1, headers + src_index, sizeof(Header) * (i - src_index));
                         i = src_index;
                     }
 
                     headers[i].reset();
-
                     transfer_memory(i, min_diff_index, min_diff);
                 }
             }
@@ -167,8 +171,8 @@ void BlockAllocator::deallocate(void *mem)
             if (offset + headers[i].get_size() == remainder_offset)
             {
                 headers[i].increment_size(remainder_size);
-                remainder_offset = 0;
                 remainder_size = 0;
+                remainder_offset = 0;
             }
 
             headers[i].set_free(true);

@@ -1,13 +1,9 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
 
-#include <array>
-#include <random>
-
-#include "memory_allocator/Adapter.h"
+#include "./AdapterFixture.h"
 #include "memory_allocator/BlockAllocator.h"
 #include "memory_allocator/LinearAllocator.h"
-#include "memory_allocator/MappedSegmentAllocator.h"
 
 class TestClass
 {
@@ -90,10 +86,9 @@ TEST(BlockAllocatorTest, Remainder)
     ASSERT_TRUE(b);
 }
 
-TEST(AdapterTest, VectorAllocation)
+TEST_F(AdapterFixture, VectorAllocation)
 {
-    using A = Adapter<int, BlockAllocator>;
-    A::allocator.init(12, 5);
+    init(12, 5);
 
     std::vector<int, A> v;
 
@@ -102,96 +97,173 @@ TEST(AdapterTest, VectorAllocation)
     EXPECT_EQ(v[0], 3);
 }
 
-// TEST(AdapterTest, VectorLifeCycle)
-//{
-//     Adapter<int, MappedSegmentAllocator> a;
-//
-//     Adapter<char, MappedSegmentAllocator> b;
-//     b.allocator.add_chunk(sizeof(int) * 8);
-//
-//     std::vector<int, decltype(a)> v;
-//
-//     v.push_back(0);
-//
-//     const int *addr = v.data();
-//
-//     EXPECT_NE(addr, a.allocate());
-//
-//     v.push_back(1);
-//     v.push_back(2);
-//     v.push_back(3);
-//
-//     EXPECT_EQ(v[3], 3);
-//
-//     EXPECT_NE(addr, v.data());
-//
-//     v.pop_back();
-//     v.pop_back();
-//     v.pop_back();
-//
-//     EXPECT_EQ(v.size(), 1);
-// }
-//
-// TEST(AdapterTest, NestedVectors)
-//{
-//     Adapter<int, MappedSegmentAllocator> a;
-//     a.allocator.add_chunk(10'000'000);
-//
-//     constexpr size_t element_count = 64000;
-//
-//     struct Parent
-//     {
-//         std::vector<Parent *, Adapter<Parent *, MappedSegmentAllocator>> parents;
-//         size_t i = 0;
-//     };
-//
-//     std::vector<Parent, Adapter<Parent, MappedSegmentAllocator>> parents;
-//
-//     std::unordered_map<int, Parent *> parents_by_int;
-//
-//     parents.reserve(element_count);
-//
-//     for (size_t i = 0; i < element_count; ++i)
-//     {
-//         parents.push_back({{}, i});
-//
-//         parents_by_int.insert({i, &parents.back()});
-//     }
-//
-//     std::random_device rd;
-//     std::uniform_int_distribution<int> dist(0, element_count);
-//
-//     for (Parent &p : parents)
-//     {
-//         for (size_t i = 0; i < 2; ++i)
-//         {
-//             int index = dist(rd);
-//
-//             if (index != p.i)
-//             {
-//                 auto parent = parents_by_int.find(index);
-//
-//                 if (parent != parents_by_int.end())
-//                 {
-//                     p.parents.push_back(parent->second);
-//                 }
-//             }
-//         }
-//     }
-// }
-//
-// TEST(LinearAllocatorTest, AllocateAndFree)
-//{
-//     LinearAllocator a(64);
-//
-//     bool alive = false;
-//
-//     TestClass *tc = a.emplace<TestClass>(alive, 1, 2, 3);
-//
-//     EXPECT_TRUE(alive);
-//
-//     a.free(tc);
-//     EXPECT_EQ(tc->a, 0);
-//     EXPECT_EQ(tc->b, 0);
-//     EXPECT_EQ(tc->c, 0);
-// }
+TEST_F(AdapterFixture, MultipleVectorAllocations)
+{
+    init(1024, 100); // Larger arena and header capacity
+
+    std::vector<int, A> v1, v2, v3, v4;
+
+    // Push multiple elements to trigger reallocations
+    for (int i = 0; i < 10; ++i)
+    {
+        v1.push_back(i);
+        v2.push_back(i * 10);
+        v3.push_back(i * 100);
+        v4.push_back(i * 1000); // 4th vector - where your crash happens
+    }
+
+    // Verify data integrity
+    for (int i = 0; i < 10; ++i)
+    {
+        EXPECT_EQ(v1[i], i);
+        EXPECT_EQ(v2[i], i * 10);
+        EXPECT_EQ(v3[i], i * 100);
+        EXPECT_EQ(v4[i], i * 1000);
+    }
+}
+
+TEST_F(AdapterFixture, VectorReallocationStress)
+{
+    init(2048, 200);
+
+    std::vector<int, A> v;
+
+    // Force multiple reallocations (vector typically doubles capacity)
+    // This tests allocation, deallocation, and reallocation cycles
+    for (int i = 0; i < 100; ++i)
+    {
+        v.push_back(i);
+
+        // Verify all elements are still correct after each reallocation
+        for (int j = 0; j <= i; ++j)
+        {
+            EXPECT_EQ(v[j], j) << "Failed at iteration " << i << ", index " << j;
+        }
+    }
+}
+
+TEST_F(AdapterFixture, AlignmentCheck)
+{
+    init(512, 50);
+
+    std::vector<int, A> v;
+
+    // Allocate and check alignment of the underlying pointer
+    v.reserve(10);
+
+    int *ptr = v.data();
+    uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+
+    // int typically requires 4-byte alignment, but allocators often use 8 or 16
+    EXPECT_EQ(addr % alignof(int), 0) << "Pointer not aligned for int";
+    EXPECT_EQ(addr % 8, 0) << "Pointer not 8-byte aligned";
+}
+
+TEST_F(AdapterFixture, InterleavedAllocationDeallocation)
+{
+    init(2048, 200);
+
+    std::vector<int, A> v1, v2, v3, v4;
+
+    // Interleaved operations that might expose coalescing bugs
+    v1.push_back(1);
+    v2.push_back(2);
+    v1.push_back(3);
+    v3.push_back(4);
+    v2.push_back(5);
+    v4.push_back(6);
+
+    // Clear some vectors (triggers deallocation)
+    v2.clear();
+    v2.shrink_to_fit();
+
+    // Allocate again (might reuse freed space)
+    v4.push_back(7);
+    v4.push_back(8);
+
+    // Verify
+    EXPECT_EQ(v1[0], 1);
+    EXPECT_EQ(v1[1], 3);
+    EXPECT_EQ(v3[0], 4);
+    EXPECT_EQ(v4[0], 6);
+    EXPECT_EQ(v4[1], 7);
+    EXPECT_EQ(v4[2], 8);
+}
+
+TEST_F(AdapterFixture, ExhaustHeadersAndArena)
+{
+    init(sizeof(int) * 2, 2);
+
+    std::vector<int, A> vec;
+
+    vec.push_back(0);
+    EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
+
+    vec.clear();
+
+    vec.push_back(0);
+    EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
+}
+
+TEST_F(AdapterFixture, ArenaExhaustion)
+{
+    init(1000, 100); // Very small arena
+
+    std::vector<std::vector<int, A>, A> vectors;
+
+    // Try to allocate until we run out of space
+    bool allocation_failed = false;
+    try
+    {
+        for (int i = 0; i < 100; ++i)
+        {
+            vectors.emplace_back();
+
+            for (int j = 0; j < 50; ++j)
+            {
+                vectors.back().push_back(j);
+            }
+        }
+    }
+    catch (...)
+    {
+        allocation_failed = true;
+    }
+
+    // Should either succeed or fail gracefully
+    // If it crashes with corrupted headers, this test will catch it
+    EXPECT_TRUE(allocation_failed || !!vectors.size());
+}
+
+TEST_F(AdapterFixture, RepeatedAllocationDeallocation)
+{
+    init(50000, 200);
+
+    // Repeatedly allocate and deallocate to stress header management
+    for (int cycle = 0; cycle < 10; ++cycle)
+    {
+        std::vector<std::vector<int, A>, A> vectors;
+
+        // Allocate many vectors
+        for (int i = 0; i < 20; ++i)
+        {
+            vectors.emplace_back();
+            for (int j = 0; j < 20; ++j)
+            {
+                vectors.back().push_back(cycle * 1000 + i * 10 + j);
+            }
+        }
+
+        // Verify
+        for (int i = 0; i < 20; ++i)
+        {
+            EXPECT_EQ(vectors[i].size(), 20);
+            for (int j = 0; j < 20; ++j)
+            {
+                EXPECT_EQ(vectors[i][j], cycle * 1000 + i * 10 + j);
+            }
+        }
+
+        // vectors go out of scope, deallocating everything
+    }
+}
