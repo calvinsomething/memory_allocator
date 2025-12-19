@@ -40,8 +40,11 @@ class BlockAllocator
     void deallocate(void *mem);
 
 #ifndef NDEBUG
-    size_t count_free_blocks();
-    size_t get_largest_free_block();
+    size_t count_free_blocks() const;
+
+    size_t get_largest_free_block() const;
+
+    size_t count_active_headers() const;
 #endif
 
   private:

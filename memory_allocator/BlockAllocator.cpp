@@ -83,28 +83,32 @@ BlockAllocator::~BlockAllocator()
 void *BlockAllocator::allocate(size_t size)
 {
     // find best fitting block
-    size_t min_diff = INVALID_INT, min_diff_index = 0, summed_offset = 0, min_diff_offset = 0;
-    for (size_t i = 0; i < headers_count; ++i)
+    size_t min_diff = INVALID_INT, min_diff_index = 0, min_diff_offset = 0;
     {
-        size_t block_size = headers[i].get_size();
-        if (block_size >= size && headers[i].is_free())
+        size_t summed_offset = 0;
+        for (size_t i = 0; i < headers_count; ++i)
         {
-            size_t diff = block_size - size;
-            if (!diff)
+            size_t block_size = headers[i].get_size();
+            if (block_size >= size && headers[i].is_free())
             {
-                headers[i].set_free(false);
-                return static_cast<void *>(memory + summed_offset);
+                size_t diff = block_size - size;
+                if (!diff)
+                {
+                    headers[i].set_free(false);
+                    return static_cast<void *>(memory + summed_offset);
+                }
+                else if (diff < min_diff)
+                {
+                    min_diff = diff;
+                    min_diff_index = i;
+                    min_diff_offset = summed_offset;
+                }
             }
-            else if (diff < min_diff)
-            {
-                min_diff = diff;
-                min_diff_index = i;
-                min_diff_offset = summed_offset;
-            }
-        }
 
-        summed_offset += block_size + (summed_offset == remainder_offset) *
-                                          remainder_size; // include remainder_size if we encounter remainder's address
+            summed_offset +=
+                block_size + (summed_offset == remainder_offset) *
+                                 remainder_size; // include remainder_size if we encounter remainder's address
+        }
     }
 
     void *mem = 0;
@@ -229,7 +233,21 @@ size_t BlockAllocator::find_empty_block_index()
 }
 
 #ifndef NDEBUG
-size_t BlockAllocator::count_free_blocks()
+
+size_t BlockAllocator::count_active_headers() const
+{
+    size_t count = 0;
+    for (size_t i = 0; i < headers_count; ++i)
+    {
+        if (!headers[i].is_empty())
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t BlockAllocator::count_free_blocks() const
 {
     size_t count = 0;
     for (size_t i = 0; i < headers_count; ++i)
@@ -242,7 +260,7 @@ size_t BlockAllocator::count_free_blocks()
     return count;
 }
 
-size_t BlockAllocator::get_largest_free_block()
+size_t BlockAllocator::get_largest_free_block() const
 {
     size_t largest = 0;
 

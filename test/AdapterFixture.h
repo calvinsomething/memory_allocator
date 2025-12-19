@@ -4,10 +4,11 @@
 #include "memory_allocator/BlockAllocator.h"
 #include <gtest/gtest.h>
 
-class AdapterFixture : public testing::Test
+template <typename ValueType> class AdapterFixture : public testing::Test
 {
   protected:
-    using A = Adapter<int, BlockAllocator>;
+    using A = Adapter<ValueType, BlockAllocator>;
+    A adapter;
 
     ~AdapterFixture()
     {

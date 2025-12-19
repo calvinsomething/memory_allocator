@@ -86,7 +86,9 @@ TEST(BlockAllocatorTest, Remainder)
     ASSERT_TRUE(b);
 }
 
-TEST_F(AdapterFixture, VectorAllocation)
+using IntAdapterFixture = AdapterFixture<int>;
+
+TEST_F(IntAdapterFixture, VectorAllocation)
 {
     init(12, 5);
 
@@ -97,7 +99,7 @@ TEST_F(AdapterFixture, VectorAllocation)
     EXPECT_EQ(v[0], 3);
 }
 
-TEST_F(AdapterFixture, MultipleVectorAllocations)
+TEST_F(IntAdapterFixture, MultipleVectorAllocations)
 {
     init(1024, 100); // Larger arena and header capacity
 
@@ -122,7 +124,7 @@ TEST_F(AdapterFixture, MultipleVectorAllocations)
     }
 }
 
-TEST_F(AdapterFixture, VectorReallocationStress)
+TEST_F(IntAdapterFixture, VectorReallocationStress)
 {
     init(2048, 200);
 
@@ -142,7 +144,7 @@ TEST_F(AdapterFixture, VectorReallocationStress)
     }
 }
 
-TEST_F(AdapterFixture, AlignmentCheck)
+TEST_F(IntAdapterFixture, AlignmentCheck)
 {
     init(512, 50);
 
@@ -159,7 +161,7 @@ TEST_F(AdapterFixture, AlignmentCheck)
     EXPECT_EQ(addr % 8, 0) << "Pointer not 8-byte aligned";
 }
 
-TEST_F(AdapterFixture, InterleavedAllocationDeallocation)
+TEST_F(IntAdapterFixture, InterleavedAllocationDeallocation)
 {
     init(2048, 200);
 
@@ -190,7 +192,7 @@ TEST_F(AdapterFixture, InterleavedAllocationDeallocation)
     EXPECT_EQ(v4[2], 8);
 }
 
-TEST_F(AdapterFixture, ExhaustHeadersAndArena)
+TEST_F(IntAdapterFixture, ExhaustHeadersAndArena)
 {
     init(sizeof(int) * 2, 2);
 
@@ -205,7 +207,7 @@ TEST_F(AdapterFixture, ExhaustHeadersAndArena)
     EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
 }
 
-TEST_F(AdapterFixture, ArenaExhaustion)
+TEST_F(IntAdapterFixture, ArenaExhaustion)
 {
     init(1000, 100); // Very small arena
 
@@ -235,7 +237,7 @@ TEST_F(AdapterFixture, ArenaExhaustion)
     EXPECT_TRUE(allocation_failed || !!vectors.size());
 }
 
-TEST_F(AdapterFixture, RepeatedAllocationDeallocation)
+TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
 {
     init(50000, 200);
 
@@ -268,21 +270,127 @@ TEST_F(AdapterFixture, RepeatedAllocationDeallocation)
     }
 }
 
-TEST_F(AdapterFixture, CoalescingAdjacentBlocks)
+TEST_F(IntAdapterFixture, NoCoalescingWhenNotAdjacent)
 {
-    init(400, 10);
+    init(sizeof(int) * 3, 3);
+
+    // Allocate 3 blocks
+    int *p1 = adapter.allocate(1);
+    EXPECT_TRUE(p1);
+    int *p2 = adapter.allocate(1);
+    EXPECT_TRUE(p2);
+    int *p3 = adapter.allocate(1);
+    EXPECT_TRUE(p3);
+
+    // Free p1 and p3 (not adjacent, p2 separates them)
+    adapter.deallocate(p1, 1);
+    adapter.deallocate(p3, 1);
+
+    // Should have 2 separate free blocks
+    EXPECT_EQ(A::allocator.count_free_blocks(), 2);
+
+    adapter.deallocate(p2, 1);
+}
+
+TEST_F(IntAdapterFixture, CoalescingAdjacentBlocks)
+{
+    init(sizeof(int) * 3, 3);
 
     // Allocate 3 adjacent blocks
-    void *p1 = A::allocator.allocate(100);
-    void *p2 = A::allocator.allocate(100);
-    void *p3 = A::allocator.allocate(100);
+    int *p1 = adapter.allocate(1);
+    EXPECT_TRUE(p1);
+    int *p2 = adapter.allocate(1);
+    EXPECT_TRUE(p2);
+    int *p3 = adapter.allocate(1);
+    EXPECT_TRUE(p3);
 
     // Free all 3 (they're adjacent)
-    A::allocator.deallocate(p1);
-    A::allocator.deallocate(p2);
-    A::allocator.deallocate(p3);
+    adapter.deallocate(p1, 1);
+    adapter.deallocate(p2, 1);
+    adapter.deallocate(p3, 1);
 
     // Should coalesce into 1 large free block
     EXPECT_EQ(A::allocator.count_free_blocks(), 1);
-    EXPECT_GT(A::allocator.get_largest_free_block(), 300);
+    EXPECT_GE(A::allocator.get_largest_free_block(), sizeof(int) * 3);
+}
+
+TEST_F(IntAdapterFixture, FragmentationPreventsLargeAlloc)
+{
+    init(sizeof(int) * 4, 4);
+
+    // Allocate 4 blocks
+    int *p1 = adapter.allocate(1);
+    EXPECT_TRUE(p1);
+    int *p2 = adapter.allocate(1);
+    EXPECT_TRUE(p2);
+    int *p3 = adapter.allocate(1);
+    EXPECT_TRUE(p3);
+    int *p4 = adapter.allocate(1);
+    EXPECT_TRUE(p4);
+
+    // Free alternating blocks (p1 and p3)
+    adapter.deallocate(p1, 1);
+    adapter.deallocate(p3, 1);
+
+    EXPECT_THROW(adapter.allocate(2), std::bad_alloc) << "Should fail due to fragmentation";
+}
+
+TEST_F(IntAdapterFixture, HeaderReuseAfterCoalescing)
+{
+    init(sizeof(int) * 2, 3);
+
+    // First cycle
+    int *p1 = adapter.allocate(1);
+    EXPECT_TRUE(p1);
+    int *p2 = adapter.allocate(1);
+    EXPECT_TRUE(p2);
+    adapter.deallocate(p1, 1);
+    adapter.deallocate(p2, 1);
+
+    size_t headers_after_cycle1 = A::allocator.count_active_headers();
+
+    // Second cycle - should reuse headers
+    int *p3 = adapter.allocate(1);
+    EXPECT_TRUE(p3);
+    int *p4 = adapter.allocate(1);
+    EXPECT_TRUE(p4);
+    adapter.deallocate(p3, 1);
+    adapter.deallocate(p4, 1);
+
+    size_t headers_after_cycle2 = A::allocator.count_active_headers();
+
+    // Headers shouldn't grow between cycles if reuse works
+    EXPECT_EQ(headers_after_cycle1, headers_after_cycle2) << "Headers not being reused";
+}
+
+TEST_F(IntAdapterFixture, VectorReallocationsCreateHeaders)
+{
+    // Need enough space for vector growth: 1, 2, 4, 8 = 15 ints total
+    init(sizeof(int) * 15, 10);
+
+    size_t initial = A::allocator.count_active_headers();
+
+    {
+        std::vector<int, A> vec;
+        vec.reserve(1); // Start with capacity 1
+
+        // Push 8 items, causing reallocations: 1->2, 2->4, 4->8
+        for (int i = 0; i < 8; ++i)
+        {
+            vec.push_back(i);
+        }
+
+        size_t during = A::allocator.count_active_headers();
+        size_t free_blocks = A::allocator.count_free_blocks();
+
+        // Should have accumulated headers from the reallocation cycles
+        // Active headers = current allocation + freed blocks (if not coalesced)
+        std::cout << "Active headers: " << during << ", Free blocks: " << free_blocks << "\n";
+
+        // If coalescing works well, free blocks should be fewer than total reallocations (3)
+        EXPECT_LE(free_blocks, 3) << "Too many free blocks suggests poor coalescing";
+    }
+
+    // After vec is destroyed, should have freed its memory
+    EXPECT_GT(A::allocator.count_free_blocks(), 0);
 }
