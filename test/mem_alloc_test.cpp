@@ -241,6 +241,8 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
 {
     init(50000, 200);
 
+    void *first_alloc = 0;
+
     // Repeatedly allocate and deallocate to stress header management
     for (int cycle = 0; cycle < 10; ++cycle)
     {
@@ -250,6 +252,10 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
         for (int i = 0; i < 20; ++i)
         {
             vectors.emplace_back();
+            if (!first_alloc)
+            {
+                first_alloc = vectors.data();
+            }
             for (int j = 0; j < 20; ++j)
             {
                 vectors.back().push_back(cycle * 1000 + i * 10 + j);
@@ -268,6 +274,12 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
 
         // vectors go out of scope, deallocating everything
     }
+
+    A::allocator.log_headers();
+
+    A::allocator.deallocate(static_cast<char *>(first_alloc) + 284);
+
+    A::allocator.log_headers();
 }
 
 TEST_F(IntAdapterFixture, NoCoalescingWhenNotAdjacent)

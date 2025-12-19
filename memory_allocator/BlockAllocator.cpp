@@ -39,6 +39,7 @@ bool BlockAllocator::Header::is_empty()
 BlockAllocator::Header &BlockAllocator::Header::operator+=(BlockAllocator::Header &other)
 {
 #ifndef NDEBUG
+    assert(this != &other && "BlockAllocator::Header::operator+= expects 'this' != 'other'");
     assert(this->is_free() && "BlockAllocator::Header::operator+= expects 'this' to be flagged free");
     assert(other.is_free() && "BlockAllocator::Header::operator+= expects 'other' to be flagged free");
 #endif
@@ -114,42 +115,54 @@ void *BlockAllocator::allocate(size_t size)
     void *mem = 0;
     if (min_diff != INVALID_INT)
     {
-        if (!transfer_memory(min_diff_index + 1, min_diff_index, min_diff))
+        Header *transfer_dest = get_lower_free(min_diff_index);
+        if (!transfer_dest)
         {
-            if (!transfer_memory(min_diff_index - 1, min_diff_index, min_diff))
+            size_t index_higher = min_diff_index + 1;
+            if (index_higher < headers_count)
             {
-                size_t i = find_empty_block_index();
+                transfer_dest = headers + index_higher;
+            }
+        }
 
-                if (i == INVALID_INT)
+        if (!transfer_dest)
+        {
+            size_t i = find_empty_block_index();
+
+            if (i == INVALID_INT)
+            {
+                if (!remainder_size)
                 {
-                    if (!remainder_size)
-                    {
-                        remainder_size = min_diff;
-                        remainder_offset = min_diff_offset + size;
-                        headers[min_diff_index].increment_size(-remainder_size);
-                    }
+                    remainder_size = min_diff;
+                    remainder_offset = min_diff_offset + size;
+                    headers[min_diff_index].increment_size(-remainder_size);
+                    // set transfer_dest to same block so increment_size calls nullify each other
+                    transfer_dest = headers + min_diff_index;
+                }
+            }
+            else
+            {
+                if (i < min_diff_index)
+                {
+                    size_t src_index = i + 1;
+                    memcpy(headers + i, headers + src_index, sizeof(Header) * (min_diff_index + 1 - src_index));
+                    i = min_diff_index;
+                    min_diff_index -= 1;
                 }
                 else
                 {
-                    if (i < min_diff_index)
-                    {
-                        size_t src_index = i + 1;
-                        memcpy(headers + i, headers + src_index, sizeof(Header) * (min_diff_index + 1 - src_index));
-                        i = min_diff_index;
-                        min_diff_index -= 1;
-                    }
-                    else
-                    {
-                        size_t src_index = min_diff_index + 1;
-                        memcpy(headers + src_index + 1, headers + src_index, sizeof(Header) * (i - src_index));
-                        i = src_index;
-                    }
-
-                    headers[i].reset();
-                    transfer_memory(i, min_diff_index, min_diff);
+                    size_t src_index = min_diff_index + 1;
+                    memcpy(headers + src_index + 1, headers + src_index, sizeof(Header) * (i - src_index));
+                    i = src_index;
                 }
+
+                headers[i].reset();
+                transfer_dest = headers + i;
             }
         }
+
+        headers[min_diff_index].increment_size(-min_diff);
+        transfer_dest->increment_size(min_diff);
 
         headers[min_diff_index].set_free(false);
         mem = static_cast<void *>(memory + min_diff_offset);
@@ -179,7 +192,7 @@ void BlockAllocator::deallocate(void *mem)
 
             headers[i].set_free(true);
 
-            coalesce_adjacent(i);
+            coalesce_adjacent_blocks(i);
 
             return;
         }
@@ -188,20 +201,33 @@ void BlockAllocator::deallocate(void *mem)
     }
 }
 
-bool BlockAllocator::transfer_memory(size_t dest_index, size_t src_index, size_t size)
+BlockAllocator::Header *BlockAllocator::get_lower_free(size_t i)
 {
-    if (dest_index >= headers_count || !headers[dest_index].is_free())
+    Header *adjacent_block_header = 0;
+
+    for (size_t adjacent_index = i - 1; adjacent_index < headers_count; --adjacent_index)
     {
-        return false;
+        if (!headers[adjacent_index].is_free())
+        {
+            // attempt to use empty header one address higher
+            ++adjacent_index;
+            if (adjacent_index != i)
+            {
+                adjacent_block_header = headers + adjacent_index;
+            }
+            break;
+        }
+        if (!headers[adjacent_index].is_empty())
+        {
+            adjacent_block_header = headers + adjacent_index;
+            break;
+        }
     }
 
-    headers[src_index].increment_size(-size);
-    headers[dest_index].increment_size(size);
-
-    return true;
+    return adjacent_block_header;
 }
 
-void BlockAllocator::coalesce_adjacent(size_t i)
+void BlockAllocator::coalesce_adjacent_blocks(size_t i)
 {
     size_t adjacent_index = i + 1;
     if (adjacent_index < headers_count && headers[adjacent_index].is_free())
@@ -209,13 +235,10 @@ void BlockAllocator::coalesce_adjacent(size_t i)
         headers[i] += headers[adjacent_index];
     }
 
-    for (adjacent_index = i - 1; adjacent_index < headers_count && headers[adjacent_index].is_free(); --adjacent_index)
+    Header *lower_free_block = get_lower_free(i);
+    if (lower_free_block)
     {
-        if (!headers[adjacent_index].is_empty())
-        {
-            headers[adjacent_index] += headers[i];
-            break;
-        }
+        *lower_free_block += headers[i];
     }
 }
 
@@ -233,6 +256,20 @@ size_t BlockAllocator::find_empty_block_index()
 }
 
 #ifndef NDEBUG
+#include <iostream>
+
+void BlockAllocator::log_headers() const
+{
+    for (size_t i = 0; i < headers_count;)
+    {
+        for (size_t j = 0; j < 10 && headers_count; ++j)
+        {
+            std::cout << headers[i].is_free() << ":" << headers[i].get_size() << " ";
+            ++i;
+        }
+        std::cout << "\n";
+    }
+}
 
 size_t BlockAllocator::count_active_headers() const
 {
