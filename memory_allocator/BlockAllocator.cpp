@@ -39,6 +39,7 @@ bool BlockAllocator::Header::is_empty()
 BlockAllocator::Header &BlockAllocator::Header::operator+=(BlockAllocator::Header &other)
 {
 #ifndef NDEBUG
+    assert(this != &other && "BlockAllocator::Header::operator+= expects 'this' != 'other'");
     assert(this->is_free() && "BlockAllocator::Header::operator+= expects 'this' to be flagged free");
     assert(other.is_free() && "BlockAllocator::Header::operator+= expects 'other' to be flagged free");
 #endif
@@ -209,12 +210,21 @@ void BlockAllocator::coalesce_adjacent(size_t i)
         headers[i] += headers[adjacent_index];
     }
 
-    for (adjacent_index = i - 1; adjacent_index < headers_count && headers[adjacent_index].is_free(); --adjacent_index)
+    for (adjacent_index = i - 1; adjacent_index < headers_count; --adjacent_index)
     {
+        if (!headers[adjacent_index].is_free())
+        {
+            ++adjacent_index;
+            if (adjacent_index != i)
+            {
+                headers[adjacent_index] += headers[i];
+            }
+            return;
+        }
         if (!headers[adjacent_index].is_empty())
         {
             headers[adjacent_index] += headers[i];
-            break;
+            return;
         }
     }
 }
