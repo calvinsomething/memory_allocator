@@ -274,12 +274,6 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
 
         // vectors go out of scope, deallocating everything
     }
-
-    A::allocator.log_headers();
-
-    A::allocator.deallocate(static_cast<char *>(first_alloc) + 284);
-
-    A::allocator.log_headers();
 }
 
 TEST_F(IntAdapterFixture, NoCoalescingWhenNotAdjacent)

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <new>
+#include <stdexcept>
 
 // Header
 size_t BlockAllocator::Header::get_size() const
@@ -119,45 +120,44 @@ void *BlockAllocator::allocate(size_t size)
         if (!transfer_dest)
         {
             size_t index_higher = min_diff_index + 1;
-            if (index_higher < headers_count)
+            if (index_higher < headers_count && headers[index_higher].is_free())
             {
                 transfer_dest = headers + index_higher;
             }
-        }
-
-        if (!transfer_dest)
-        {
-            size_t i = find_empty_block_index();
-
-            if (i == INVALID_INT)
-            {
-                if (!remainder_size)
-                {
-                    remainder_size = min_diff;
-                    remainder_offset = min_diff_offset + size;
-                    headers[min_diff_index].increment_size(-remainder_size);
-                    // set transfer_dest to same block so increment_size calls nullify each other
-                    transfer_dest = headers + min_diff_index;
-                }
-            }
             else
             {
-                if (i < min_diff_index)
+                size_t i = find_empty_block_index();
+
+                if (i == INVALID_INT)
                 {
-                    size_t src_index = i + 1;
-                    memcpy(headers + i, headers + src_index, sizeof(Header) * (min_diff_index + 1 - src_index));
-                    i = min_diff_index;
-                    min_diff_index -= 1;
+                    if (!remainder_size)
+                    {
+                        remainder_size = min_diff;
+                        remainder_offset = min_diff_offset + size;
+                        headers[min_diff_index].increment_size(-remainder_size);
+                        // set transfer_dest to same block so increment_size calls nullify each other
+                        transfer_dest = headers + min_diff_index;
+                    }
                 }
                 else
                 {
-                    size_t src_index = min_diff_index + 1;
-                    memcpy(headers + src_index + 1, headers + src_index, sizeof(Header) * (i - src_index));
-                    i = src_index;
-                }
+                    if (i < min_diff_index)
+                    {
+                        size_t src_index = i + 1;
+                        memcpy(headers + i, headers + src_index, sizeof(Header) * (min_diff_index + 1 - src_index));
+                        i = min_diff_index;
+                        min_diff_index -= 1;
+                    }
+                    else
+                    {
+                        size_t src_index = min_diff_index + 1;
+                        memcpy(headers + src_index + 1, headers + src_index, sizeof(Header) * (i - src_index));
+                        i = src_index;
+                    }
 
-                headers[i].reset();
-                transfer_dest = headers + i;
+                    headers[i].reset();
+                    transfer_dest = headers + i;
+                }
             }
         }
 
@@ -199,6 +199,8 @@ void BlockAllocator::deallocate(void *mem)
 
         summed_offset += headers[i].get_size();
     }
+
+    throw std::runtime_error("BlockAllocator::deallocate failed");
 }
 
 BlockAllocator::Header *BlockAllocator::get_lower_free(size_t i)
