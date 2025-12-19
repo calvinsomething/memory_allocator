@@ -41,8 +41,6 @@ BlockAllocator::Header &BlockAllocator::Header::operator+=(BlockAllocator::Heade
 #ifndef NDEBUG
     assert(this->is_free() && "BlockAllocator::Header::operator+= expects 'this' to be flagged free");
     assert(other.is_free() && "BlockAllocator::Header::operator+= expects 'other' to be flagged free");
-    assert((this + 1 == &other || this - 1 == &other) &&
-           "BlockAllocator::Header::operator+= expects 'other' to be at a memory address adjacent to 'this'");
 #endif
     size_and_free_flag += other.get_size();
     other.reset();
@@ -88,10 +86,10 @@ void *BlockAllocator::allocate(size_t size)
     size_t min_diff = INVALID_INT, min_diff_index = 0, summed_offset = 0, min_diff_offset = 0;
     for (size_t i = 0; i < headers_count; ++i)
     {
-        size_t header_size = headers[i].get_size();
-        if (header_size >= size && headers[i].is_free())
+        size_t block_size = headers[i].get_size();
+        if (block_size >= size && headers[i].is_free())
         {
-            size_t diff = header_size - size;
+            size_t diff = block_size - size;
             if (!diff)
             {
                 headers[i].set_free(false);
@@ -105,8 +103,8 @@ void *BlockAllocator::allocate(size_t size)
             }
         }
 
-        summed_offset += header_size + (summed_offset == remainder_offset) *
-                                           remainder_size; // include remainder_size if we encounter remainder's address
+        summed_offset += block_size + (summed_offset == remainder_offset) *
+                                          remainder_size; // include remainder_size if we encounter remainder's address
     }
 
     void *mem = 0;
@@ -166,7 +164,7 @@ void BlockAllocator::deallocate(void *mem)
 
     for (size_t i = 0; i < headers_count; ++i)
     {
-        if (summed_offset == offset)
+        if (summed_offset == offset && !headers[i].is_empty())
         {
             if (offset + headers[i].get_size() == remainder_offset)
             {
@@ -177,17 +175,7 @@ void BlockAllocator::deallocate(void *mem)
 
             headers[i].set_free(true);
 
-            size_t adjacent_index = i + 1;
-            if (adjacent_index < headers_count && headers[adjacent_index].is_free())
-            {
-                headers[i] += headers[adjacent_index];
-            }
-
-            adjacent_index -= 2;
-            if (i && headers[adjacent_index].is_free())
-            {
-                headers[adjacent_index] += headers[i];
-            }
+            coalesce_adjacent(i);
 
             return;
         }
@@ -209,6 +197,24 @@ bool BlockAllocator::transfer_memory(size_t dest_index, size_t src_index, size_t
     return true;
 }
 
+void BlockAllocator::coalesce_adjacent(size_t i)
+{
+    size_t adjacent_index = i + 1;
+    if (adjacent_index < headers_count && headers[adjacent_index].is_free())
+    {
+        headers[i] += headers[adjacent_index];
+    }
+
+    for (adjacent_index = i - 1; adjacent_index < headers_count && headers[adjacent_index].is_free(); --adjacent_index)
+    {
+        if (!headers[adjacent_index].is_empty())
+        {
+            headers[adjacent_index] += headers[i];
+            break;
+        }
+    }
+}
+
 size_t BlockAllocator::find_empty_block_index()
 {
     for (size_t i = 0; i < headers_count; ++i)
@@ -221,3 +227,32 @@ size_t BlockAllocator::find_empty_block_index()
 
     return INVALID_INT;
 }
+
+#ifndef NDEBUG
+size_t BlockAllocator::count_free_blocks()
+{
+    size_t count = 0;
+    for (size_t i = 0; i < headers_count; ++i)
+    {
+        if (headers[i].is_free() && headers[i].get_size())
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t BlockAllocator::get_largest_free_block()
+{
+    size_t largest = 0;
+
+    for (size_t i = 0; i < headers_count; ++i)
+    {
+        size_t size = headers[i].get_size();
+        if (headers[i].is_free() && size)
+            largest = largest > size ? largest : size;
+    }
+
+    return largest;
+}
+#endif

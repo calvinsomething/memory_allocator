@@ -39,6 +39,11 @@ class BlockAllocator
 
     void deallocate(void *mem);
 
+#ifndef NDEBUG
+    size_t count_free_blocks();
+    size_t get_largest_free_block();
+#endif
+
   private:
     static constexpr size_t INVALID_INT = ~size_t(0);
 
@@ -51,6 +56,8 @@ class BlockAllocator
     size_t remainder_offset = 0, remainder_size = 0;
 
     bool transfer_memory(size_t dest_index, size_t src_index, size_t size);
+
+    void coalesce_adjacent(size_t i);
 
     size_t find_empty_block_index();
 };

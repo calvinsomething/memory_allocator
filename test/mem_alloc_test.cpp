@@ -267,3 +267,22 @@ TEST_F(AdapterFixture, RepeatedAllocationDeallocation)
         // vectors go out of scope, deallocating everything
     }
 }
+
+TEST_F(AdapterFixture, CoalescingAdjacentBlocks)
+{
+    init(400, 10);
+
+    // Allocate 3 adjacent blocks
+    void *p1 = A::allocator.allocate(100);
+    void *p2 = A::allocator.allocate(100);
+    void *p3 = A::allocator.allocate(100);
+
+    // Free all 3 (they're adjacent)
+    A::allocator.deallocate(p1);
+    A::allocator.deallocate(p2);
+    A::allocator.deallocate(p3);
+
+    // Should coalesce into 1 large free block
+    EXPECT_EQ(A::allocator.count_free_blocks(), 1);
+    EXPECT_GT(A::allocator.get_largest_free_block(), 300);
+}
