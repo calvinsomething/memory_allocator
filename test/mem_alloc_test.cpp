@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <unordered_map>
 
 #include "./AdapterFixture.h"
 #include "memory_allocator/BlockAllocator.h"
@@ -399,4 +400,58 @@ TEST_F(IntAdapterFixture, VectorReallocationsCreateHeaders)
 
     // After vec is destroyed, should have freed its memory
     EXPECT_GT(A::allocator.count_free_blocks(), 0);
+}
+
+template <typename K, typename V>
+using Map = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, Adapter<std::pair<K const, V>, BlockAllocator>>;
+
+TEST_F(IntAdapterFixture, NestedUnorderedMaps)
+{
+    init(50'000, 200);
+
+    Map<int, Map<int, std::vector<int, A>>> nested_maps;
+
+    for (int i = 0; i < 20; ++i)
+    {
+        nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
+
+        if (i % 2)
+        {
+            nested_maps[i].reserve(50);
+        }
+
+        for (int j = 0; j < 20; ++j)
+        {
+            nested_maps[i][i].push_back(j);
+        }
+    }
+
+    for (auto &m : nested_maps)
+    {
+        for (auto &v : m.second)
+        {
+            for (int val : v.second)
+            {
+                std::cout << val << ", ";
+            }
+            std::cout << "\n";
+        }
+    }
+
+    nested_maps.clear();
+
+    for (int i = 0; i < 20; ++i)
+    {
+        nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
+
+        if (i % 2)
+        {
+            nested_maps[i].reserve(50);
+        }
+
+        for (int j = 0; j < 20; ++j)
+        {
+            nested_maps[i][i].push_back(j);
+        }
+    }
 }

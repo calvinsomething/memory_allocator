@@ -1,11 +1,21 @@
 #pragma once
 
-#include <cstddef>
-#include <iostream>
+#ifdef NDEBUG
 
 inline void log_bits(const char *mem, size_t n)
 {
-#ifndef NDEBUG
+}
+
+#define DEBUG_OUT(ARGS)
+
+#else
+
+#include <cstddef>
+#include <iostream>
+#include <sstream>
+
+inline void log_bits(const char *mem, size_t n)
+{
     for (size_t i = 0; i < n; ++i)
     {
         for (size_t j = 0; j < 8; ++j)
@@ -15,5 +25,13 @@ inline void log_bits(const char *mem, size_t n)
         std::cout << "\n";
     }
     std::cout << "\n";
-#endif
 }
+
+#define DEBUG_OUT(ARGS)                                                                                                \
+    {                                                                                                                  \
+        std::stringstream ss;                                                                                          \
+        ss << ARGS;                                                                                                    \
+        std::cout << ss.str();                                                                                         \
+    }
+
+#endif

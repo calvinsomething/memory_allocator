@@ -5,6 +5,8 @@
 #include <new>
 #include <stdexcept>
 
+#include "memory_allocator/Debug.h"
+
 // Header
 size_t BlockAllocator::Header::get_size() const
 {
@@ -130,14 +132,17 @@ void *BlockAllocator::allocate(size_t size)
 
                 if (i == INVALID_INT)
                 {
-                    if (!remainder_size)
+                    if (remainder_size)
                     {
-                        remainder_size = min_diff;
-                        remainder_offset = min_diff_offset + size;
-                        headers[min_diff_index].increment_size(-remainder_size);
-                        // set transfer_dest to same block so increment_size calls nullify each other
-                        transfer_dest = headers + min_diff_index;
+                        DEBUG_OUT("BlockAllocator headers exhausted.");
+                        return 0;
                     }
+
+                    remainder_size = min_diff;
+                    remainder_offset = min_diff_offset + size;
+                    headers[min_diff_index].increment_size(-remainder_size);
+                    // set transfer_dest to same block so increment_size calls nullify each other
+                    transfer_dest = headers + min_diff_index;
                 }
                 else
                 {
@@ -183,7 +188,8 @@ void BlockAllocator::deallocate(void *mem)
     {
         if (summed_offset == offset && !headers[i].is_empty())
         {
-            if (offset + headers[i].get_size() == remainder_offset)
+            if (remainder_size &&
+                (offset - remainder_size == remainder_offset || offset + headers[i].get_size() == remainder_offset))
             {
                 headers[i].increment_size(remainder_size);
                 remainder_size = 0;
