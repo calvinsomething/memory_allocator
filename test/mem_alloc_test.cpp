@@ -455,3 +455,14 @@ TEST_F(IntAdapterFixture, NestedUnorderedMaps)
         }
     }
 }
+
+using StringAdapterFixture = AdapterFixture<std::string>;
+
+TEST_F(StringAdapterFixture, CreateAndRelease)
+{
+    init(sizeof(std::string), 1);
+
+    std::string *s = A::create();
+
+    A::release(s);
+}

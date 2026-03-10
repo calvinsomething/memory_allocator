@@ -2,8 +2,26 @@
 
 #include <cstddef>
 #include <new>
+#include <type_traits>
 
-template <typename ValueType, typename AllocatorType, unsigned ID = 0> class Adapter
+#include "memory_allocator/BlockAllocator.h"
+
+template <typename T> struct is_allocator : std::false_type
+{
+};
+
+template <> struct is_allocator<BlockAllocator> : std::true_type
+{
+};
+
+template <typename T> using ValidAllocator = typename std::enable_if<is_allocator<T>::value>::type;
+
+template <typename ValueType, typename AllocatorType, unsigned ID = 0, typename Enable = void> class Adapter
+{
+};
+
+template <typename ValueType, typename AllocatorType, unsigned ID>
+class Adapter<ValueType, AllocatorType, ID, ValidAllocator<AllocatorType>>
 {
   public:
     using value_type = ValueType;
@@ -42,7 +60,7 @@ template <typename ValueType, typename AllocatorType, unsigned ID = 0> class Ada
         return *this;
     }
 
-    ValueType *allocate(size_t n = 1)
+    static ValueType *allocate(size_t n = 1)
     {
         ValueType *mem = static_cast<ValueType *>(allocator.allocate(n * sizeof(ValueType)));
 
@@ -54,7 +72,7 @@ template <typename ValueType, typename AllocatorType, unsigned ID = 0> class Ada
         return mem;
     }
 
-    void deallocate(ValueType *mem, size_t n)
+    static void deallocate(ValueType *mem, size_t n)
     {
         return allocator.deallocate(mem);
     }
@@ -70,6 +88,23 @@ template <typename ValueType, typename AllocatorType, unsigned ID = 0> class Ada
     }
 
     static AllocatorType &allocator;
+
+    // extensions
+    static ValueType *create()
+    {
+        ValueType *mem = allocate();
+
+        new (mem) ValueType;
+
+        return mem;
+    }
+
+    static void release(ValueType *value)
+    {
+        value->~ValueType();
+
+        deallocate(value, 1);
+    }
 };
 
 template <typename AllocatorType, unsigned ID> class AllocatorGroup
@@ -81,4 +116,5 @@ template <typename AllocatorType, unsigned ID> class AllocatorGroup
 template <typename AllocatorType, unsigned ID> AllocatorType AllocatorGroup<AllocatorType, ID>::allocator;
 
 template <typename ValueType, typename AllocatorType, unsigned ID>
-AllocatorType &Adapter<ValueType, AllocatorType, ID>::allocator = AllocatorGroup<AllocatorType, ID>::allocator;
+AllocatorType &Adapter<ValueType, AllocatorType, ID, ValidAllocator<AllocatorType>>::allocator =
+    AllocatorGroup<AllocatorType, ID>::allocator;
