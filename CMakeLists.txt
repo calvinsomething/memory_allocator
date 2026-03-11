@@ -5,7 +5,9 @@ project(memory_allocator)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(${PROJECT_NAME})
+set(SOURCE_DIR src)
+
+add_subdirectory(${SOURCE_DIR}/${PROJECT_NAME})
 
 # if this is the top level project of the build
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
