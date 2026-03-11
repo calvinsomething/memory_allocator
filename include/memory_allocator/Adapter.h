@@ -89,17 +89,16 @@ class Adapter<ValueType, AllocatorType, ID, ValidAllocator<AllocatorType>>
 
     static AllocatorType &allocator;
 
-    // extensions
-    static ValueType *create()
+    template <typename... Args> static ValueType *emplace(Args &&...args)
     {
         ValueType *mem = allocate();
 
-        new (mem) ValueType;
+        new (mem) ValueType(args...);
 
         return mem;
     }
 
-    static void release(ValueType *value)
+    static void remove(ValueType *value)
     {
         value->~ValueType();
 

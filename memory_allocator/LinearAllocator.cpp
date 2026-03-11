@@ -14,7 +14,7 @@ LinearAllocator::~LinearAllocator()
     free(begin);
 }
 
-void LinearAllocator::free(void *mem)
+void LinearAllocator::remove(void *mem)
 {
     if (mem >= begin && mem < cursor)
     {
