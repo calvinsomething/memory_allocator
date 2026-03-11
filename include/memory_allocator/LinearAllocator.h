@@ -37,7 +37,7 @@ class LinearAllocator
         return mem;
     }
 
-    void remove(void *mem);
+    void free(void *mem);
 
   private:
     char *begin, *cursor, *end;
