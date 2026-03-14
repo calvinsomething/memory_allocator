@@ -6,6 +6,8 @@
 #include "memory_allocator/BlockAllocator.h"
 #include "memory_allocator/LinearAllocator.h"
 
+#ifndef NDEBUG
+
 class TestClass
 {
   public:
@@ -469,4 +471,98 @@ TEST_F(StringAdapterFixture, EmplaceAndRemove)
     ASSERT_EQ(*s, std::string("hi"));
 
     A::remove(s);
+}
+
+#else
+
+using IntAdapterFixture = AdapterFixture<int>;
+
+#endif
+
+TEST_F(IntAdapterFixture, BenchmarkSmallAllocations)
+{
+    const int iterations = 100000;
+    volatile int sink = 0;
+
+    // --- Custom allocator ---
+    init(iterations * sizeof(int) * 2, 50);
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < iterations; ++i)
+    {
+        std::vector<int, A> v;
+        v.push_back(i);
+        sink = v[0];
+    }
+
+    auto custom_time = std::chrono::high_resolution_clock::now() - start;
+
+    // --- Standard Allocator ---
+    start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < iterations; ++i)
+    {
+        std::vector<int> v;
+        v.push_back(i);
+        sink = v[0];
+    }
+
+    auto default_time = std::chrono::high_resolution_clock::now() - start;
+
+    auto custom_ms = std::chrono::duration_cast<std::chrono::microseconds>(custom_time).count();
+    auto default_ms = std::chrono::duration_cast<std::chrono::microseconds>(default_time).count();
+
+    std::cout << "Custom allocator:  " << custom_ms << " us\n";
+    std::cout << "Default Allocator: " << default_ms << " us\n";
+    std::cout << "Ratio:             " << custom_ms / (double)default_ms << "x\n";
+
+    SUCCEED();
+}
+
+TEST_F(IntAdapterFixture, BenchmarkTypicalAllocations)
+{
+    const int iterations = 100000;
+    volatile int sink = 0;
+
+    // --- Custom allocator ---
+    init(iterations * sizeof(int) * 3, 1000);
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        std::vector<int, A> v;
+
+        for (int i = 0; i < iterations; ++i)
+        {
+            v.push_back(i);
+            sink = v[0];
+        }
+    }
+
+    auto custom_time = std::chrono::high_resolution_clock::now() - start;
+
+    // --- Default Allocator: ---
+    start = std::chrono::high_resolution_clock::now();
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        std::vector<int> v;
+
+        for (int i = 0; i < iterations; ++i)
+        {
+            v.push_back(i);
+            sink = v[0];
+        }
+    }
+
+    auto default_time = std::chrono::high_resolution_clock::now() - start;
+
+    auto custom_ms = std::chrono::duration_cast<std::chrono::microseconds>(custom_time).count();
+    auto default_ms = std::chrono::duration_cast<std::chrono::microseconds>(default_time).count();
+
+    std::cout << "Custom allocator:  " << custom_ms << " us\n";
+    std::cout << "Default Allocator: " << default_ms << " us\n";
+    std::cout << "Ratio:             " << custom_ms / (double)default_ms << "x\n";
+
+    SUCCEED();
 }

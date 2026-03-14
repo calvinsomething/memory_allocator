@@ -55,8 +55,10 @@ class BlockAllocator
     size_t memory_size = 0;
     char *memory = 0;
 
-    size_t headers_count = 0;
+    size_t header_count = 0;
     Header *headers = 0;
+
+    size_t empty_headers_start = 0;
 
     size_t remainder_offset = 0, remainder_size = 0;
 
@@ -64,5 +66,5 @@ class BlockAllocator
 
     void coalesce_adjacent_blocks(size_t i);
 
-    size_t find_empty_block_index();
+    void shift_empty_header(size_t i);
 };
