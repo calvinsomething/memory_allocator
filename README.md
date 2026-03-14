@@ -34,7 +34,7 @@ template <typename K, typename V>
 using StdUnorderedMap = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, Allocator<std::pair<K const, V>>>;
 
 // String
-using StdString = std::basic_string<Allocator<char>>;
+using StdString = std::basic_string<char, std::char_traits<char>, Allocator<char>>;
 
 // Set
 template <typename T> using StdSet = std::set<T, std::less<T>, Allocator<T>>;
