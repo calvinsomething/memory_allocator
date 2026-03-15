@@ -8,8 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SOURCE_DIR src)
 
 
-if(NOT BUILD_TESTS AND NOT CMAKE_BUILD_TYPE STREQUAL Release)
+if(NOT CMAKE_BUILD_TYPE STREQUAL Release)
 	set(BUILD_TESTS ON)
+	set(CMAKE_BUILD_TYPE Debug)
 endif()
 
 # if this is the top level project of the build
@@ -22,8 +23,6 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
 		message("Configuring tests build...")
 		add_subdirectory(test)
-
-		set(CMAKE_BUILD_TYPE Debug)
 	endif()
 endif()
 
