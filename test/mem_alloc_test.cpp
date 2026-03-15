@@ -509,6 +509,8 @@ TEST_F(IntAdapterFixture, BenchmarkSmallAllocations)
 
     auto custom_time = std::chrono::high_resolution_clock::now() - start;
 
+    init(1, 1); // free memory without calling destructor
+
     // --- Standard Allocator ---
     start = std::chrono::high_resolution_clock::now();
 
@@ -549,6 +551,8 @@ TEST_F(IntAdapterFixture, BenchmarkTypicalAllocations)
     }
 
     auto custom_time = std::chrono::high_resolution_clock::now() - start;
+
+    init(1, 1); // free memory without calling destructor
 
     // --- Default Allocator: ---
     start = std::chrono::high_resolution_clock::now();
