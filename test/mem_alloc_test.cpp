@@ -479,10 +479,22 @@ using IntAdapterFixture = AdapterFixture<int>;
 
 #endif
 
+#ifdef _MSC_VER
+#define PREVENT_OPTIMIZATION(data)                                                                                     \
+    {                                                                                                                  \
+        _ReadWriteBarrier();                                                                                           \
+        (void)data;                                                                                                    \
+    }
+#else
+#define PREVENT_OPTIMIZATION(data)                                                                                     \
+    {                                                                                                                  \
+        asm volatile("" : : "g"(data) : "memory");                                                                     \
+    }
+#endif
+
 TEST_F(IntAdapterFixture, BenchmarkSmallAllocations)
 {
     const int iterations = 100000;
-    volatile int sink = 0;
 
     // --- Custom allocator ---
     init(iterations * sizeof(int) * 2, 50);
@@ -492,7 +504,7 @@ TEST_F(IntAdapterFixture, BenchmarkSmallAllocations)
     {
         std::vector<int, A> v;
         v.push_back(i);
-        sink = v[0];
+        PREVENT_OPTIMIZATION(v.data());
     }
 
     auto custom_time = std::chrono::high_resolution_clock::now() - start;
@@ -504,7 +516,7 @@ TEST_F(IntAdapterFixture, BenchmarkSmallAllocations)
     {
         std::vector<int> v;
         v.push_back(i);
-        sink = v[0];
+        PREVENT_OPTIMIZATION(v.data());
     }
 
     auto default_time = std::chrono::high_resolution_clock::now() - start;
@@ -515,17 +527,14 @@ TEST_F(IntAdapterFixture, BenchmarkSmallAllocations)
     std::cout << "Custom allocator:  " << custom_ms << " us\n";
     std::cout << "Default Allocator: " << default_ms << " us\n";
     std::cout << "Ratio:             " << custom_ms / (double)default_ms << "x\n";
-
-    SUCCEED();
 }
 
 TEST_F(IntAdapterFixture, BenchmarkTypicalAllocations)
 {
     const int iterations = 100000;
-    volatile int sink = 0;
 
     // --- Custom allocator ---
-    init(iterations * sizeof(int) * 3, 1000);
+    init(iterations * sizeof(int) * 3, 50);
     auto start = std::chrono::high_resolution_clock::now();
 
     for (size_t i = 0; i < 10; ++i)
@@ -535,7 +544,7 @@ TEST_F(IntAdapterFixture, BenchmarkTypicalAllocations)
         for (int i = 0; i < iterations; ++i)
         {
             v.push_back(i);
-            sink = v[0];
+            PREVENT_OPTIMIZATION(v.data());
         }
     }
 
@@ -551,7 +560,7 @@ TEST_F(IntAdapterFixture, BenchmarkTypicalAllocations)
         for (int i = 0; i < iterations; ++i)
         {
             v.push_back(i);
-            sink = v[0];
+            PREVENT_OPTIMIZATION(v.data());
         }
     }
 
@@ -563,6 +572,4 @@ TEST_F(IntAdapterFixture, BenchmarkTypicalAllocations)
     std::cout << "Custom allocator:  " << custom_ms << " us\n";
     std::cout << "Default Allocator: " << default_ms << " us\n";
     std::cout << "Ratio:             " << custom_ms / (double)default_ms << "x\n";
-
-    SUCCEED();
 }

@@ -61,6 +61,12 @@ void BlockAllocator::init(size_t memory_size, size_t max_block_count)
 {
     assert(max_block_count && "max_block_count must be non-zero");
 
+    if (memory)
+    {
+        free(memory);
+        memory = 0;
+    }
+
     BlockAllocator::memory_size = memory_size;
     header_count = max_block_count;
 
