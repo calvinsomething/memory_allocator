@@ -41,7 +41,7 @@ bool BlockAllocator::Header::is_empty()
 // Allocator
 BlockAllocator::Header &BlockAllocator::Header::operator+=(BlockAllocator::Header &other)
 {
-#ifndef NDEBUG
+#ifdef BUILD_TESTS
     assert(this != &other && "BlockAllocator::Header::operator+= expects 'this' != 'other'");
     assert(this->is_free() && "BlockAllocator::Header::operator+= expects 'this' to be flagged free");
     assert(other.is_free() && "BlockAllocator::Header::operator+= expects 'other' to be flagged free");
@@ -92,28 +92,31 @@ BlockAllocator::~BlockAllocator()
     }
 }
 
-void *BlockAllocator::allocate(size_t size)
+void *BlockAllocator::allocate(size_t size, size_t alignment)
 {
     // find best fitting block
-    size_t min_diff = INVALID_INT, min_diff_index = 0, min_diff_offset = 0;
+    size_t min_diff = INVALID_INT, min_diff_index = 0, min_diff_offset = 0, padding = 0;
     {
         size_t summed_offset = 0;
         for (size_t i = 0; i < empty_headers_start; ++i)
         {
             size_t block_size = headers[i].get_size();
-            if (block_size >= size && headers[i].is_free())
+            padding = (alignment - (summed_offset % alignment)) % alignment;
+            size_t aligned_size = padding + size;
+
+            if (block_size >= aligned_size && headers[i].is_free())
             {
-                size_t diff = block_size - size;
+                size_t diff = block_size - aligned_size;
                 if (!diff)
                 {
                     headers[i].set_free(false);
-                    return static_cast<void *>(memory + summed_offset);
+                    return static_cast<void *>(memory + summed_offset + padding);
                 }
                 else if (diff < min_diff)
                 {
                     min_diff = diff;
                     min_diff_index = i;
-                    min_diff_offset = summed_offset;
+                    min_diff_offset = summed_offset + padding;
                 }
             }
 
@@ -152,7 +155,7 @@ void *BlockAllocator::allocate(size_t size)
                 }
                 else
                 {
-                    // split headers after destination header
+                    // split headers array after destination header
                     size_t src_index = min_diff_index + 1;
                     transfer_dest = headers + src_index;
 
@@ -176,7 +179,7 @@ void *BlockAllocator::allocate(size_t size)
     return mem;
 }
 
-void BlockAllocator::deallocate(void *mem)
+void BlockAllocator::deallocate(void *mem, size_t alignment)
 {
     size_t offset = static_cast<char *>(mem) - memory;
 
@@ -186,10 +189,13 @@ void BlockAllocator::deallocate(void *mem)
 
     for (size_t i = 0; i < empty_headers_start; ++i)
     {
-        if (summed_offset == offset)
+        size_t padding = (alignment - (summed_offset % alignment)) % alignment;
+        size_t aligned_offset = offset - padding;
+
+        if (summed_offset == aligned_offset)
         {
-            if (remainder_size &&
-                (offset - remainder_size == remainder_offset || offset + headers[i].get_size() == remainder_offset))
+            if (remainder_size && (aligned_offset - remainder_size == remainder_offset ||
+                                   aligned_offset + headers[i].get_size() == remainder_offset))
             {
                 headers[i].increment_size(remainder_size);
                 remainder_size = 0;
@@ -265,7 +271,7 @@ void BlockAllocator::coalesce_adjacent_blocks(size_t i)
     }
 }
 
-#ifndef NDEBUG
+#ifdef BUILD_TESTS
 #include <iostream>
 
 void BlockAllocator::log_headers() const

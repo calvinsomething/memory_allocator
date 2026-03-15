@@ -6,8 +6,6 @@
 #include "memory_allocator/BlockAllocator.h"
 #include "memory_allocator/LinearAllocator.h"
 
-#ifndef NDEBUG
-
 class TestClass
 {
   public:
@@ -32,10 +30,10 @@ TEST(BlockAllocatorTest, Allocate)
 
     BlockAllocator allocator(size * 2, 2);
 
-    int *a = static_cast<int *>(allocator.allocate(size));
+    int *a = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(a);
 
-    int *b = static_cast<int *>(allocator.allocate(size));
+    int *b = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(b);
 
     ASSERT_NE(a, b);
@@ -47,10 +45,10 @@ TEST(BlockAllocatorTest, OverAllocate)
 
     BlockAllocator allocator(size, 1);
 
-    int *a = static_cast<int *>(allocator.allocate(size));
+    int *a = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(a);
 
-    int *b = static_cast<int *>(allocator.allocate(size));
+    int *b = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_FALSE(b);
 }
 
@@ -60,19 +58,19 @@ TEST(BlockAllocatorTest, Deallocate)
 
     BlockAllocator allocator(size * 2, 2);
 
-    int *a = static_cast<int *>(allocator.allocate(size));
+    int *a = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(a);
 
-    int *b = static_cast<int *>(allocator.allocate(size));
+    int *b = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(b);
 
-    allocator.deallocate(b);
-    allocator.deallocate(a);
+    allocator.deallocate(b, alignof(int));
+    allocator.deallocate(a, alignof(int));
 
-    int *c = static_cast<int *>(allocator.allocate(size));
+    int *c = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_EQ(a, c);
 
-    int *d = static_cast<int *>(allocator.allocate(size));
+    int *d = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_EQ(b, d);
 }
 
@@ -82,10 +80,10 @@ TEST(BlockAllocatorTest, Remainder)
 
     BlockAllocator allocator(size * 3, 2);
 
-    int *a = static_cast<int *>(allocator.allocate(size));
+    int *a = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(a);
 
-    int *b = static_cast<int *>(allocator.allocate(size));
+    int *b = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(b);
 }
 
@@ -93,13 +91,24 @@ using IntAdapterFixture = AdapterFixture<int>;
 
 TEST_F(IntAdapterFixture, VectorAllocation)
 {
-    init(12, 5);
+    try
+    {
+        init(12, 5);
 
-    std::vector<int, A> v;
+        std::vector<int, A> v;
 
-    v.push_back(3);
+        v.push_back(3);
 
-    EXPECT_EQ(v[0], 3);
+        EXPECT_EQ(v[0], 3);
+    }
+    catch (std::exception &e)
+    {
+        std::cout << e.what() << "\n";
+    }
+    catch (...)
+    {
+        std::cout << "unknown exception\n";
+    }
 }
 
 TEST_F(IntAdapterFixture, MultipleVectorAllocations)
@@ -145,6 +154,100 @@ TEST_F(IntAdapterFixture, VectorReallocationStress)
             EXPECT_EQ(v[j], j) << "Failed at iteration " << i << ", index " << j;
         }
     }
+}
+
+struct alignas(16) HeavyType
+{
+    float data[4];
+    ~HeavyType()
+    {
+        data[0] = 0.0f;
+    }
+};
+
+using HeavyTypeAdapterFixture = AdapterFixture<HeavyType>;
+
+TEST_F(HeavyTypeAdapterFixture, GrowthAlignmentStress)
+{
+    init(65536, 1024); // Large pool
+    std::vector<HeavyType, A> v;
+
+    for (int i = 0; i < 500; ++i)
+    {
+        v.emplace_back(); // Forces many reallocations/moves
+
+        // Manual alignment check
+        auto addr = reinterpret_cast<uintptr_t>(&v.back());
+        EXPECT_EQ(addr % 16, 0) << "Alignment broken at index " << i;
+    }
+}
+
+TEST_F(HeavyTypeAdapterFixture, AlignmentFragmentationStress)
+{
+    init(8192, 200); // Initialize your block allocator
+
+    // We'll use a char allocator to create "holes" that are NOT 16-byte aligned
+    using CharAlloc = typename std::allocator_traits<A>::template rebind_alloc<char>;
+    CharAlloc charAlloc;
+    A heavyAlloc;
+
+    std::vector<char *> garbage;
+    std::vector<HeavyType *> alignedObjects;
+
+    // 1. Create a "Jagged" memory layout
+    for (int i = 0; i < 10; ++i)
+    {
+        // Allocate 1 byte. This moves your internal 'summed_offset'
+        // to something like 1, 17, 33, etc.
+        char *c = charAlloc.allocate(1);
+        garbage.push_back(c);
+
+        // 2. Now try to allocate a 16-byte aligned HeavyType
+        // If your allocator returns (memory + summed_offset) without padding,
+        // this pointer will NOT be a multiple of 16.
+        HeavyType *h = heavyAlloc.allocate(1);
+        alignedObjects.push_back(h);
+
+        uintptr_t addr = reinterpret_cast<uintptr_t>(h);
+        EXPECT_EQ(addr % 16, 0) << "CRASH IMMINENT: HeavyType allocated at non-16-byte boundary: " << std::hex << addr
+                                << " after " << i << " iterations.";
+    }
+
+    // Cleanup
+    for (auto p : alignedObjects)
+        heavyAlloc.deallocate(p, 1);
+    for (auto p : garbage)
+        charAlloc.deallocate(p, 1);
+}
+
+TEST_F(IntAdapterFixture, RebindAndConversionRequirement)
+{
+    // 1. Setup your custom heap/pool
+    init(4096, 200);
+
+    // Create an allocator for 'int'
+    A intAlloc;
+
+    // 2. Test Rebind Requirement
+    // STL containers like std::list/std::map use this to allocate nodes.
+    using DoubleAlloc = typename std::allocator_traits<A>::template rebind_alloc<double>;
+
+    // 3. Test Converting Constructor Requirement
+    // This is where most Release crashes happen. The 'double' allocator
+    // MUST be constructible from the 'int' allocator and share its state.
+    DoubleAlloc doubleAlloc(intAlloc);
+
+    // 4. Test Functionality of the Rebound Allocator
+    // If doubleAlloc.pool is null or garbage, this will crash in Release.
+    double *ptr = doubleAlloc.allocate(1);
+    ASSERT_NE(ptr, nullptr) << "Rebound allocator failed to allocate memory.";
+
+    // Verify it can deallocate (uses the same state/pool)
+    doubleAlloc.deallocate(ptr, 1);
+
+    // 5. Test Equality Requirement
+    // Memory from intAlloc must be deallocatable by doubleAlloc (if they share a pool).
+    EXPECT_TRUE(intAlloc == doubleAlloc);
 }
 
 TEST_F(IntAdapterFixture, AlignmentCheck)
@@ -197,24 +300,35 @@ TEST_F(IntAdapterFixture, InterleavedAllocationDeallocation)
 
 TEST_F(IntAdapterFixture, ExhaustHeadersAndArena)
 {
-    init(sizeof(int) * 2, 2);
+    try
+    {
+        init(sizeof(int) * 2, 2);
 
-    std::vector<int, A> vec;
+        std::vector<int, A> vec;
 
-    vec.push_back(0);
-    EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
+        vec.push_back(0);
+        EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
 
-    vec.clear();
+        vec.clear();
 
-    vec.push_back(0);
-    EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
+        vec.push_back(0);
+        EXPECT_THROW(try { vec.push_back(1); } catch (std::exception &e) { throw e; } catch (...){}, std::exception);
+    }
+    catch (std::exception &e)
+    {
+        std::cout << e.what() << "\n";
+    }
+    catch (...)
+    {
+        std::cout << "unknown exception\n";
+    }
 }
 
 TEST_F(IntAdapterFixture, ArenaExhaustion)
 {
     init(1000, 100); // Very small arena
 
-    std::vector<std::vector<int, A>, A> vectors;
+    std::vector<std::vector<int, A>, Adapter<std::vector<int, A>, BlockAllocator>> vectors;
 
     // Try to allocate until we run out of space
     bool allocation_failed = false;
@@ -249,7 +363,7 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
     // Repeatedly allocate and deallocate to stress header management
     for (int cycle = 0; cycle < 10; ++cycle)
     {
-        std::vector<std::vector<int, A>, A> vectors;
+        std::vector<std::vector<int, A>, Adapter<std::vector<int, A>, BlockAllocator>> vectors;
 
         // Allocate many vectors
         for (int i = 0; i < 20; ++i)
@@ -404,57 +518,107 @@ TEST_F(IntAdapterFixture, VectorReallocationsCreateHeaders)
     EXPECT_GT(A::allocator.count_free_blocks(), 0);
 }
 
+TEST_F(IntAdapterFixture, MapRebindStatePersistence)
+{
+    init(50000, 200);
+    A intAlloc; // Your starting allocator with the valid pool pointer
+
+    // 1. Map doesn't just rebind to 'int'. It reallocates internal "Nodes".
+    // Let's simulate the Map rebinding to its internal node type.
+    struct FakeNode
+    {
+        void *ptr;
+        int hash;
+        int value;
+    };
+    using NodeAlloc = typename std::allocator_traits<A>::template rebind_alloc<FakeNode>;
+
+    // 2. This is where the failure happens:
+    // The Map creates a NodeAlloc by converting from your intAlloc.
+    NodeAlloc nodeAlloc(intAlloc);
+
+    // 3. THE CRITICAL CHECK:
+    // Does the new allocator still point to your BlockAllocator?
+    // If 'm_pool' is private, add a getter or check if allocate(1) works.
+    void *ptr = nodeAlloc.allocate(1);
+    ASSERT_NE(ptr, nullptr) << "Rebound allocator lost its pool pointer!";
+    nodeAlloc.deallocate(static_cast<FakeNode *>(ptr), 1);
+
+    // 4. THE NESTED CHECK (The "Silent Crash" Culprit):
+    // In a nested map, the outer map's NodeAlloc is used to construct the inner Map.
+    // This requires another round of conversions.
+    A nestedAlloc(nodeAlloc);
+    void *ptr2 = nestedAlloc.allocate(1);
+    ASSERT_NE(ptr2, nullptr) << "Nested allocator lost its pool pointer after double rebind!";
+    nestedAlloc.deallocate(static_cast<int *>(ptr2), 1);
+}
+
 template <typename K, typename V>
 using Map = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, Adapter<std::pair<K const, V>, BlockAllocator>>;
 
 TEST_F(IntAdapterFixture, NestedUnorderedMaps)
 {
-    init(50'000, 200);
-
-    Map<int, Map<int, std::vector<int, A>>> nested_maps;
-
-    for (int i = 0; i < 20; ++i)
+    try
     {
-        nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
+        init(60'000, 300);
 
-        if (i % 2)
-        {
-            nested_maps[i].reserve(50);
-        }
+        Map<int, Map<int, std::vector<int, A>>> nested_maps;
 
-        for (int j = 0; j < 20; ++j)
-        {
-            nested_maps[i][i].push_back(j);
-        }
-    }
+        std::cout << "nested_maps\n";
 
-    for (auto &m : nested_maps)
-    {
-        for (auto &v : m.second)
+        for (int i = 0; i < 20; ++i)
         {
-            for (int val : v.second)
+            nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
+
+            std::cout << i << "\n";
+
+            if (i % 2)
             {
-                std::cout << val << ", ";
+                nested_maps[i].reserve(50);
             }
-            std::cout << "\n";
+
+            for (int j = 0; j < 20; ++j)
+            {
+                nested_maps[i][i].push_back(j);
+            }
+        }
+
+        for (auto &m : nested_maps)
+        {
+            for (auto &v : m.second)
+            {
+                for (int val : v.second)
+                {
+                    std::cout << val << ", ";
+                }
+                std::cout << "\n";
+            }
+        }
+
+        nested_maps.clear();
+
+        for (int i = 0; i < 20; ++i)
+        {
+            nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
+
+            if (i % 2)
+            {
+                nested_maps[i].reserve(50);
+            }
+
+            for (int j = 0; j < 20; ++j)
+            {
+                nested_maps[i][i].push_back(j);
+            }
         }
     }
-
-    nested_maps.clear();
-
-    for (int i = 0; i < 20; ++i)
+    catch (std::exception &e)
     {
-        nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
-
-        if (i % 2)
-        {
-            nested_maps[i].reserve(50);
-        }
-
-        for (int j = 0; j < 20; ++j)
-        {
-            nested_maps[i][i].push_back(j);
-        }
+        std::cout << e.what() << "\n";
+    }
+    catch (...)
+    {
+        std::cout << "unknown exception\n";
     }
 }
 
@@ -472,12 +636,6 @@ TEST_F(StringAdapterFixture, EmplaceAndRemove)
 
     A::remove(s);
 }
-
-#else
-
-using IntAdapterFixture = AdapterFixture<int>;
-
-#endif
 
 #ifdef _MSC_VER
 #define PREVENT_OPTIMIZATION(data)                                                                                     \

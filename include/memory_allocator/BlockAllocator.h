@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstring>
 
 class BlockAllocator
@@ -35,11 +36,11 @@ class BlockAllocator
 
     ~BlockAllocator();
 
-    void *allocate(size_t size);
+    void *allocate(size_t size, size_t alignment = alignof(std::max_align_t));
 
-    void deallocate(void *mem);
+    void deallocate(void *mem, size_t alignment = alignof(std::max_align_t));
 
-#ifndef NDEBUG
+#ifdef BUILD_TESTS
     void log_headers() const;
 
     size_t count_free_blocks() const;
