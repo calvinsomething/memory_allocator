@@ -8,6 +8,9 @@ Currently includes `BlockAllocator`, which allocates blocks of memory with corre
 
 The `Adapter` class template can be used with `BlockAllocator`, adding an API layer meeting the [C++ named requirements: Allocator](https://en.cppreference.com/w/cpp/named_req/Allocator.html).
 
+### BlockAllocator Benchmarks
+<img width="772" height="438" alt="Image" src="https://github.com/user-attachments/assets/61dc742f-260d-4ab1-b850-223922481a34" />
+
 ## Building
 
 Requires CMake 3.x and a C++17-compatible compiler.
