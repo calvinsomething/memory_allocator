@@ -564,13 +564,9 @@ TEST_F(IntAdapterFixture, NestedUnorderedMaps)
 
         Map<int, Map<int, std::vector<int, A>>> nested_maps;
 
-        std::cout << "nested_maps\n";
-
         for (int i = 0; i < 20; ++i)
         {
             nested_maps[i].insert({i, std::vector<int, A>({1, 2, 3, 4})});
-
-            std::cout << i << "\n";
 
             if (i % 2)
             {

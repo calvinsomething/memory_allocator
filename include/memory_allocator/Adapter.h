@@ -62,7 +62,7 @@ class Adapter<ValueType, AllocatorType, ID, ValidAllocator<AllocatorType>>
 
     static ValueType *allocate(size_t n = 1)
     {
-        ValueType *mem = static_cast<ValueType *>(allocator.allocate(n * sizeof(ValueType)));
+        ValueType *mem = static_cast<ValueType *>(allocator.allocate(n * sizeof(ValueType), alignof(ValueType)));
 
         if (!mem)
         {
@@ -74,7 +74,7 @@ class Adapter<ValueType, AllocatorType, ID, ValidAllocator<AllocatorType>>
 
     static void deallocate(ValueType *mem, size_t n)
     {
-        return allocator.deallocate(mem);
+        return allocator.deallocate(mem, alignof(ValueType));
     }
 
     template <typename V, typename A, unsigned I> bool operator==(const Adapter<V, A, I> &other)
