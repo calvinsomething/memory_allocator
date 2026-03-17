@@ -64,8 +64,8 @@ TEST(BlockAllocatorTest, Deallocate)
     int *b = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_TRUE(b);
 
-    allocator.deallocate(b, alignof(int));
-    allocator.deallocate(a, alignof(int));
+    allocator.deallocate(b);
+    allocator.deallocate(a);
 
     int *c = static_cast<int *>(allocator.allocate(size, alignof(int)));
     ASSERT_EQ(a, c);
@@ -360,12 +360,10 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
 
     void *first_alloc = 0;
 
-    // Repeatedly allocate and deallocate to stress header management
     for (int cycle = 0; cycle < 10; ++cycle)
     {
         std::vector<std::vector<int, A>, Adapter<std::vector<int, A>, BlockAllocator>> vectors;
 
-        // Allocate many vectors
         for (int i = 0; i < 20; ++i)
         {
             vectors.emplace_back();
@@ -379,7 +377,6 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
             }
         }
 
-        // Verify
         for (int i = 0; i < 20; ++i)
         {
             EXPECT_EQ(vectors[i].size(), 20);
@@ -390,6 +387,56 @@ TEST_F(IntAdapterFixture, RepeatedAllocationDeallocation)
         }
 
         // vectors go out of scope, deallocating everything
+    }
+}
+
+TEST_F(IntAdapterFixture, FragmentedInterleavedGrowth)
+{
+    init(500000, 5000);
+
+    using V = std::vector<int, A>;
+
+    using CharAlloc = Adapter<char, BlockAllocator>;
+    using Noise = std::vector<char, CharAlloc>;
+
+    V *vectors[5];
+    std::vector<Noise, Adapter<Noise, BlockAllocator>> fragmentation_noise;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        vectors[i] = Adapter<V, BlockAllocator>::emplace();
+        vectors[i]->reserve(i * 8);
+
+        fragmentation_noise.emplace_back(123, (char)i);
+    }
+
+    for (int i = 0; i < 1000; ++i)
+    {
+        int v_idx = i % 5;
+        vectors[v_idx]->push_back(i + (v_idx * 20000));
+
+        // Randomly fragment the heap by churning noise vectors
+        if (i % 50 == 0)
+        {
+            fragmentation_noise.erase(fragmentation_noise.begin() + (i % fragmentation_noise.size()));
+            fragmentation_noise.emplace_back(i % 256, (char)i);
+        }
+
+        // Verify integrity of the first element of each vector
+        for (int check_v = 0; check_v < 5; ++check_v)
+        {
+            if (!vectors[check_v]->empty())
+            {
+                int expected_first = check_v + (check_v * 20000);
+                ASSERT_EQ((*vectors[check_v])[0], expected_first)
+                    << "Corruption at iteration " << i << " in vector " << check_v;
+            }
+        }
+    }
+
+    for (int v = 0; v < 5; ++v)
+    {
+        Adapter<V, BlockAllocator>::remove(vectors[v]);
     }
 }
 

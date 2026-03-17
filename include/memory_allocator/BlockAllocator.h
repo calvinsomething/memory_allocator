@@ -38,7 +38,7 @@ class BlockAllocator
 
     void *allocate(size_t size, size_t alignment = alignof(std::max_align_t));
 
-    void deallocate(void *mem, size_t alignment = alignof(std::max_align_t));
+    void deallocate(void *mem);
 
 #ifdef BUILD_TESTS
     void log_headers() const;
@@ -63,7 +63,9 @@ class BlockAllocator
 
     size_t remainder_offset = 0, remainder_size = 0;
 
-    Header *get_lower_free(size_t i);
+    Header *get_free_header(size_t i);
+
+    void shift_memory(size_t &i, size_t &left, size_t &right);
 
     void coalesce_adjacent_blocks(size_t i);
 

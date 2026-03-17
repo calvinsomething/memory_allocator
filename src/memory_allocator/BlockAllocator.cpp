@@ -92,10 +92,97 @@ BlockAllocator::~BlockAllocator()
     }
 }
 
+BlockAllocator::Header *BlockAllocator::get_free_header(size_t i)
+{
+    if (i < empty_headers_start && headers[i].is_free())
+    {
+        return headers + i;
+    }
+
+    return 0;
+}
+
+void BlockAllocator::shift_memory(size_t &i, size_t &left, size_t &right)
+{
+    if (left)
+    {
+        Header *dest_left = get_free_header(i - 1);
+        if (dest_left)
+        {
+            dest_left->increment_size(left);
+            headers[i].increment_size(-left);
+            left = 0;
+        }
+    }
+
+    if (right)
+    {
+        Header *dest_right = get_free_header(i + 1);
+        if (dest_right)
+        {
+            dest_right->increment_size(right);
+            headers[i].increment_size(-right);
+            right = 0;
+        }
+    }
+
+    size_t insert_count = !!left + !!right;
+
+    if (!insert_count)
+    {
+        return;
+    }
+
+    size_t available = header_count - empty_headers_start;
+
+    if (insert_count > available)
+    {
+        if ((insert_count - available) > !remainder_size)
+        {
+            return;
+        }
+
+        --insert_count;
+    }
+
+    if (available)
+    {
+        size_t dest_index = i + insert_count;
+
+        memmove(headers + dest_index, headers + i, sizeof(Header) * (empty_headers_start - i));
+        // memcpy(headers + dest_index, headers + i, sizeof(Header) * (empty_headers_start - i));
+
+        i = dest_index - !!right;
+
+        if (right)
+        {
+            headers[i].reset();
+            headers[i].increment_size(headers[dest_index].get_size() - right);
+
+            headers[dest_index].reset();
+            headers[dest_index].increment_size(right);
+
+            right = 0;
+            ++empty_headers_start;
+        }
+
+        if (left)
+        {
+            headers[i].increment_size(-left);
+
+            headers[i - 1].reset();
+            headers[i - 1].increment_size(left);
+
+            left = 0;
+            ++empty_headers_start;
+        }
+    }
+}
+
 void *BlockAllocator::allocate(size_t size, size_t alignment)
 {
-    // find best fitting block
-    size_t min_diff = INVALID_INT, min_diff_index = 0, min_diff_offset = 0, padding = 0;
+    // find first fitting block
+    size_t diff = INVALID_INT, block_index = 0, block_offset = 0, padding = 0;
     {
         size_t summed_offset = 0;
         for (size_t i = 0; i < empty_headers_start; ++i)
@@ -106,18 +193,11 @@ void *BlockAllocator::allocate(size_t size, size_t alignment)
 
             if (block_size >= aligned_size && headers[i].is_free())
             {
-                size_t diff = block_size - aligned_size;
-                if (!diff)
-                {
-                    headers[i].set_free(false);
-                    return static_cast<void *>(memory + summed_offset + padding);
-                }
-                else if (diff < min_diff)
-                {
-                    min_diff = diff;
-                    min_diff_index = i;
-                    min_diff_offset = summed_offset + padding;
-                }
+                diff = block_size - aligned_size;
+                block_index = i;
+                block_offset = summed_offset;
+
+                break;
             }
 
             summed_offset +=
@@ -127,59 +207,40 @@ void *BlockAllocator::allocate(size_t size, size_t alignment)
     }
 
     void *mem = 0;
-    if (min_diff != INVALID_INT)
+    if (diff != INVALID_INT)
     {
-        Header *transfer_dest = get_lower_free(min_diff_index);
-        if (!transfer_dest)
+        if (padding || diff)
         {
-            size_t index_higher = min_diff_index + 1;
-            if (index_higher < empty_headers_start && headers[index_higher].is_free())
+            size_t p = padding, d = diff;
+            shift_memory(block_index, p, d);
+
+            if (p && d)
             {
-                transfer_dest = headers + index_higher;
+                return 0;
             }
-            else
+
+            if (p)
             {
-                if (empty_headers_start == header_count)
-                {
-                    if (remainder_size)
-                    {
-                        DEBUG_OUT("BlockAllocator headers exhausted.");
-                        return 0;
-                    }
-
-                    remainder_size = min_diff;
-                    remainder_offset = min_diff_offset + size;
-                    headers[min_diff_index].increment_size(-remainder_size);
-                    // set transfer_dest to same block so increment_size calls nullify each other
-                    transfer_dest = headers + min_diff_index;
-                }
-                else
-                {
-                    // split headers array after destination header
-                    size_t src_index = min_diff_index + 1;
-                    transfer_dest = headers + src_index;
-
-                    // shift right side one to the right
-                    memcpy(headers + src_index + 1, transfer_dest, sizeof(Header) * (empty_headers_start - src_index));
-
-                    transfer_dest->reset();
-
-                    ++empty_headers_start;
-                }
+                remainder_size = p;
+                remainder_offset = block_offset;
+                headers[block_index].increment_size(-remainder_size);
+            }
+            else if (d)
+            {
+                remainder_size = d;
+                remainder_offset = block_offset + padding + size;
+                headers[block_index].increment_size(-remainder_size);
             }
         }
 
-        headers[min_diff_index].increment_size(-min_diff);
-        transfer_dest->increment_size(min_diff);
-
-        headers[min_diff_index].set_free(false);
-        mem = static_cast<void *>(memory + min_diff_offset);
+        headers[block_index].set_free(false);
+        mem = static_cast<void *>(memory + block_offset + padding);
     }
 
     return mem;
 }
 
-void BlockAllocator::deallocate(void *mem, size_t alignment)
+void BlockAllocator::deallocate(void *mem)
 {
     size_t offset = static_cast<char *>(mem) - memory;
 
@@ -189,13 +250,10 @@ void BlockAllocator::deallocate(void *mem, size_t alignment)
 
     for (size_t i = 0; i < empty_headers_start; ++i)
     {
-        size_t padding = (alignment - (summed_offset % alignment)) % alignment;
-        size_t aligned_offset = offset - padding;
-
-        if (summed_offset == aligned_offset)
+        if (summed_offset == offset)
         {
-            if (remainder_size && (aligned_offset - remainder_size == remainder_offset ||
-                                   aligned_offset + headers[i].get_size() == remainder_offset))
+            if (remainder_size &&
+                (offset - remainder_size == remainder_offset || offset + headers[i].get_size() == remainder_offset))
             {
                 headers[i].increment_size(remainder_size);
                 remainder_size = 0;
@@ -215,37 +273,12 @@ void BlockAllocator::deallocate(void *mem, size_t alignment)
     throw std::runtime_error("BlockAllocator::deallocate failed");
 }
 
-BlockAllocator::Header *BlockAllocator::get_lower_free(size_t i)
-{
-    Header *adjacent_block_header = 0;
-
-    for (size_t adjacent_index = i - 1; adjacent_index < header_count; --adjacent_index)
-    {
-        if (!headers[adjacent_index].is_free())
-        {
-            // attempt to use empty header one address higher
-            ++adjacent_index;
-            if (adjacent_index != i)
-            {
-                adjacent_block_header = headers + adjacent_index;
-            }
-            break;
-        }
-        if (!headers[adjacent_index].is_empty())
-        {
-            adjacent_block_header = headers + adjacent_index;
-            break;
-        }
-    }
-
-    return adjacent_block_header;
-}
-
 void BlockAllocator::shift_empty_header(size_t i)
 {
     size_t src_index = i + 1;
 
-    memcpy(headers + i, headers + src_index, sizeof(Header) * (empty_headers_start - src_index));
+    memmove(headers + i, headers + src_index, sizeof(Header) * (empty_headers_start - src_index));
+    // memcpy(headers + i, headers + src_index, sizeof(Header) * (empty_headers_start - src_index));
 
     --empty_headers_start;
 
@@ -262,10 +295,10 @@ void BlockAllocator::coalesce_adjacent_blocks(size_t i)
         shift_empty_header(adjacent_index);
     }
 
-    Header *lower_free_block = get_lower_free(i);
-    if (lower_free_block)
+    adjacent_index -= 2;
+    if (i && headers[adjacent_index].is_free())
     {
-        *lower_free_block += headers[i];
+        headers[adjacent_index] += headers[i];
 
         shift_empty_header(i);
     }

@@ -74,7 +74,7 @@ class Adapter<ValueType, AllocatorType, ID, ValidAllocator<AllocatorType>>
 
     static void deallocate(ValueType *mem, size_t n)
     {
-        return allocator.deallocate(mem, alignof(ValueType));
+        return allocator.deallocate(mem);
     }
 
     template <typename V, typename A, unsigned I> bool operator==(const Adapter<V, A, I> &other)
