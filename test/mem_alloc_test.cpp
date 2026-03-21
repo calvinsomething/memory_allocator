@@ -74,19 +74,6 @@ TEST(BlockAllocatorTest, Deallocate)
     ASSERT_EQ(b, d);
 }
 
-TEST(BlockAllocatorTest, Remainder)
-{
-    constexpr size_t size = sizeof(int);
-
-    BlockAllocator allocator(size * 3, 2);
-
-    int *a = static_cast<int *>(allocator.allocate(size, alignof(int)));
-    ASSERT_TRUE(a);
-
-    int *b = static_cast<int *>(allocator.allocate(size, alignof(int)));
-    ASSERT_TRUE(b);
-}
-
 using IntAdapterFixture = AdapterFixture<int>;
 
 TEST_F(IntAdapterFixture, VectorAllocation)

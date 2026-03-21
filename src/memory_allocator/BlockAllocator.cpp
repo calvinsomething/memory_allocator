@@ -102,59 +102,49 @@ BlockAllocator::Header *BlockAllocator::get_free_header(size_t i)
     return 0;
 }
 
-void BlockAllocator::shift_memory(size_t &i, size_t &left, size_t &right)
+bool BlockAllocator::shift_memory(size_t &i, size_t left, size_t right)
 {
-    if (left)
+    bool do_shift_left = !!left, do_shift_right = !!right;
+
+    if (do_shift_left)
     {
         Header *dest_left = get_free_header(i - 1);
         if (dest_left)
         {
             dest_left->increment_size(left);
             headers[i].increment_size(-left);
-            left = 0;
+            do_shift_left = 0;
         }
     }
 
-    if (right)
+    if (do_shift_right)
     {
         Header *dest_right = get_free_header(i + 1);
         if (dest_right)
         {
             dest_right->increment_size(right);
             headers[i].increment_size(-right);
-            right = 0;
+            do_shift_right = 0;
         }
     }
 
-    size_t insert_count = !!left + !!right;
+    size_t insert_count = do_shift_left + do_shift_right;
 
-    if (!insert_count)
+    if (insert_count)
     {
-        return;
-    }
-
-    size_t available = header_count - empty_headers_start;
-
-    if (insert_count > available)
-    {
-        if ((insert_count - available) > !remainder_size)
+        size_t empty_count = header_count - empty_headers_start;
+        if (insert_count > empty_count)
         {
-            return;
+            return false;
         }
 
-        --insert_count;
-    }
-
-    if (available)
-    {
         size_t dest_index = i + insert_count;
 
         memmove(headers + dest_index, headers + i, sizeof(Header) * (empty_headers_start - i));
-        // memcpy(headers + dest_index, headers + i, sizeof(Header) * (empty_headers_start - i));
 
-        i = dest_index - !!right;
+        i = dest_index - do_shift_right;
 
-        if (right)
+        if (do_shift_right)
         {
             headers[i].reset();
             headers[i].increment_size(headers[dest_index].get_size() - right);
@@ -162,21 +152,21 @@ void BlockAllocator::shift_memory(size_t &i, size_t &left, size_t &right)
             headers[dest_index].reset();
             headers[dest_index].increment_size(right);
 
-            right = 0;
             ++empty_headers_start;
         }
 
-        if (left)
+        if (do_shift_left)
         {
             headers[i].increment_size(-left);
 
             headers[i - 1].reset();
             headers[i - 1].increment_size(left);
 
-            left = 0;
             ++empty_headers_start;
         }
     }
+
+    return true;
 }
 
 void *BlockAllocator::allocate(size_t size, size_t alignment)
@@ -200,41 +190,18 @@ void *BlockAllocator::allocate(size_t size, size_t alignment)
                 break;
             }
 
-            summed_offset +=
-                block_size + (summed_offset == remainder_offset) *
-                                 remainder_size; // include remainder_size if we encounter remainder's address
+            summed_offset += block_size;
         }
     }
 
     void *mem = 0;
     if (diff != INVALID_INT)
     {
-        if (padding || diff)
+        if (!(padding || diff) || shift_memory(block_index, padding, diff))
         {
-            size_t p = padding, d = diff;
-            shift_memory(block_index, p, d);
-
-            if (p && d)
-            {
-                return 0;
-            }
-
-            if (p)
-            {
-                remainder_size = p;
-                remainder_offset = block_offset;
-                headers[block_index].increment_size(-remainder_size);
-            }
-            else if (d)
-            {
-                remainder_size = d;
-                remainder_offset = block_offset + padding + size;
-                headers[block_index].increment_size(-remainder_size);
-            }
+            headers[block_index].set_free(false);
+            mem = static_cast<void *>(memory + block_offset + padding);
         }
-
-        headers[block_index].set_free(false);
-        mem = static_cast<void *>(memory + block_offset + padding);
     }
 
     return mem;
@@ -252,14 +219,6 @@ void BlockAllocator::deallocate(void *mem)
     {
         if (summed_offset == offset)
         {
-            if (remainder_size &&
-                (offset - remainder_size == remainder_offset || offset + headers[i].get_size() == remainder_offset))
-            {
-                headers[i].increment_size(remainder_size);
-                remainder_size = 0;
-                remainder_offset = 0;
-            }
-
             headers[i].set_free(true);
 
             coalesce_adjacent_blocks(i);

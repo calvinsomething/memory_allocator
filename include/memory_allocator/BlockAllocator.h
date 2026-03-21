@@ -61,11 +61,9 @@ class BlockAllocator
 
     size_t empty_headers_start = 0;
 
-    size_t remainder_offset = 0, remainder_size = 0;
-
     Header *get_free_header(size_t i);
 
-    void shift_memory(size_t &i, size_t &left, size_t &right);
+    bool shift_memory(size_t &i, size_t left, size_t right);
 
     void coalesce_adjacent_blocks(size_t i);
 
